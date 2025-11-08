@@ -16,28 +16,35 @@ from itertools import combinations
 import os
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import log_loss
 
 warnings.filterwarnings('ignore')
 
 # ==============================================================================
-# Part 1: The Brain v12.0 - Training the "Endgame" Portfolio
+# Part 1: The Brain v13.0 - Training "The Final Machine" Portfolio
 # ==============================================================================
-# This version trains the ultimate 4-model portfolio.
+# This version includes a dynamic K-factor and the 4-model portfolio.
 
 def calculate_elo(matches):
-    """Calculates Elo ratings for all teams over the historical data."""
+    """Calculates Elo ratings with a dynamic K-factor based on goal difference."""
     teams = pd.concat([matches['HomeTeam'], matches['AwayTeam']]).unique()
     elo_ratings = {team: 1500 for team in teams}
-    k_factor = 20
+    
     home_elos, away_elos = [], []
-    for i, row in matches.iterrows():
+    for i, row in tqdm(matches.iterrows(), total=len(matches), desc="Calculating Elo Ratings"):
         h, a = row['HomeTeam'], row['AwayTeam']
         r_h, r_a = elo_ratings.get(h, 1500), elo_ratings.get(a, 1500)
         home_elos.append(r_h); away_elos.append(r_a)
+        
+        goal_diff = abs(row['FTHG'] - row['FTAG'])
+        k_factor = 20 * (1 + goal_diff / 10) # Dynamic K-Factor
+        
         e_h = 1 / (1 + 10**((r_a - r_h) / 400))
         s_h = 1 if row['FTR'] == 'H' else 0 if row['FTR'] == 'A' else 0.5
+        
         elo_ratings[h] += k_factor * (s_h - e_h)
         elo_ratings[a] += k_factor * ((1-s_h) - (1-e_h))
+        
     matches['HomeElo'], matches['AwayElo'] = home_elos, away_elos
     return matches, elo_ratings
 
@@ -45,7 +52,7 @@ def train_the_brain_final():
     """
     Trains the complete four-model portfolio and saves the brain.
     """
-    print("--- Training The Brain v12.0 (Endgame Edition) ---")
+    print("--- Training The Brain v13.0 (The Final Machine) ---")
     
     # --- Data Acquisition & Feature Engineering ---
     seasons = ['2324', '2223', '2122', '2021']
@@ -110,16 +117,16 @@ def train_the_brain_final():
         'model_charlie': {'model': model_charlie, 'features': features_charlie, 'scaler': scaler_charlie},
         'model_delta': {'model': model_delta, 'features': features_delta, 'scaler': scaler_delta}
     }
-    joblib.dump(brain_portfolio, 'betting_copilot_brain_v12.joblib')
-    joblib.dump(df, 'historical_data_with_features_v12.joblib')
-    print("\n✅ Brain v12.0 Portfolio training complete.")
+    joblib.dump(brain_portfolio, 'betting_copilot_brain_v13.joblib')
+    joblib.dump(df, 'historical_data_with_features_v13.joblib')
+    print("\n✅ Brain v13.0 Portfolio training complete.")
 
 # --- Execute the Training ---
 train_the_brain_final()
 
 
 # ==============================================================================
-# Part 2: The Co-Pilot v12.0 - The Live Endgame Tool
+# Part 2: The Co-Pilot v13.0 - The Live Final Machine
 # ==============================================================================
 
 def predict_with_portfolio(fixture, brain, historical_df):
@@ -169,15 +176,15 @@ def get_risk_profile(bet, brain):
 
 def run_the_copilot():
     """
-    Loads the v12.0 brain and runs all final analysis modules.
+    Loads the v13.0 brain and runs all final analysis modules.
     """
     print("\n\n=============================================")
-    print("🚀 LAUNCHING THE BETTING CO-PILOT (v12.0 Endgame Edition) 🚀")
+    print("🚀 LAUNCHING THE BETTING CO-PILOT (v13.0 The Final Machine) 🚀")
     print("=============================================")
     
     try:
-        brain = joblib.load('betting_copilot_brain_v12.joblib')
-        historical_df = joblib.load('historical_data_with_features_v12.joblib')
+        brain = joblib.load('betting_copilot_brain_v13.joblib')
+        historical_df = joblib.load('historical_data_with_features_v13.joblib')
     except FileNotFoundError:
         print("❌ Brain file not found. Please run the training function first."); return
         
@@ -277,7 +284,7 @@ def run_the_copilot():
         X_health_scaled = brain['model_alpha']['scaler'].transform(X_health)
         y_health_true = brain['model_alpha']['le'].transform(last_10_games['FTR'])
         health_probs = brain['model_alpha']['model'].predict_proba(X_health_scaled)
-        logloss = pd.DataFrame({'logloss': [log_loss(y_health_true, health_probs)]})['logloss'][0]
+        logloss = log_loss(y_health_true, health_probs)
         print(f"Model Alpha Log Loss on last 10 completed games: {logloss:.4f}")
         if logloss > 1.0: print("⚠️ WARNING: Model performance may be degrading. Consider retraining the brain.")
         else: print("✅ Model performance is stable.")
