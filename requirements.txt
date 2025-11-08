@@ -7,3 +7,4 @@ matplotlib
 streamlit
 nfl_data_py
 nba_api
+plotly
