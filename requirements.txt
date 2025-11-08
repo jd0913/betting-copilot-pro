@@ -5,4 +5,5 @@ joblib
 tqdm
 matplotlib
 streamlit
-plotly
+nfl_data_py
+nba_api
