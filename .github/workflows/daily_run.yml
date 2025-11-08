@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: '0 5 * * *' # Runs automatically every day at 5 AM UTC
 
+# *** THE FIX: Add this permissions block ***
+permissions:
+  contents: write # This grants the Action permission to write to the repository
+
 jobs:
   build-and-analyze:
     runs-on: ubuntu-latest
