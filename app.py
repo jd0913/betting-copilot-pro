@@ -26,7 +26,7 @@ GITHUB_REPO = "betting-copilot-pro"
 # ==============================================================================
 
 # Construct the full URL to the raw CSV file in your GitHub repository
-DATA_URL = f"https://raw.githubusercontent.com/jd0913/betting-copilot-pro/master/latest_bets.csv"
+DATA_URL = f"https://raw.githubusercontent.com/jd0913/betting-copilot-pro/main/latest_bets.csv"
 
 # ==============================================================================
 # Data Loading Function
