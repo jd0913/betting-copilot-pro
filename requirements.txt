@@ -5,3 +5,6 @@ joblib
 tqdm
 matplotlib
 streamlit
+requests
+lxml
+beautifulsoup4
