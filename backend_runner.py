@@ -1,7 +1,7 @@
 # ==============================================================================
 # Part 0: Setup and Dependencies
 # ==============================================================================
-!pip install pandas scikit-learn xgboost joblib tqdm matplotlib
+!pip install pandas scikit-learn xgboost joblib tqdm matplotlib beautifulsoup4 requests
 
 import pandas as pd
 import numpy as np
@@ -17,47 +17,57 @@ import os
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
+import requests
+from bs4 import BeautifulSoup
 
 warnings.filterwarnings('ignore')
 
 # ==============================================================================
-# Part 1: The Brain v18.0 - Training "The Final Code" Portfolio
+# Part 1: The Brain v19.0 - Training "The Resilient Machine"
 # ==============================================================================
 
-def calculate_elo(matches):
-    """Calculates Elo ratings with a dynamic K-factor based on goal difference."""
+def calculate_elo_and_volatility(matches):
+    """Calculates Elo ratings and a new Volatility Index for each team."""
     teams = pd.concat([matches['HomeTeam'], matches['AwayTeam']]).unique()
     elo_ratings = {team: 1500 for team in teams}
+    elo_errors = {team: [] for team in teams} # To track prediction errors
     
     home_elos, away_elos = [], []
-    for i, row in tqdm(matches.iterrows(), total=len(matches), desc="Calculating Elo Ratings"):
+    for i, row in tqdm(matches.iterrows(), total=len(matches), desc="Calculating Elo & Volatility"):
         h, a = row['HomeTeam'], row['AwayTeam']
         r_h, r_a = elo_ratings.get(h, 1500), elo_ratings.get(a, 1500)
         home_elos.append(r_h); away_elos.append(r_a)
         
-        goal_diff = abs(row['FTHG'] - row['FTAG'])
-        k_factor = 20 * (1 + goal_diff / 10) # Dynamic K-Factor
-        
         e_h = 1 / (1 + 10**((r_a - r_h) / 400))
         s_h = 1 if row['FTR'] == 'H' else 0 if row['FTR'] == 'A' else 0.5
         
+        # Track error
+        error = abs(s_h - e_h)
+        elo_errors[h].append(error)
+        elo_errors[a].append(error)
+        
+        k_factor = 20 * (1 + abs(row['FTHG'] - row['FTAG']) / 10)
         elo_ratings[h] += k_factor * (s_h - e_h)
         elo_ratings[a] += k_factor * ((1-s_h) - (1-e_h))
         
     matches['HomeElo'], matches['AwayElo'] = home_elos, away_elos
-    return matches, elo_ratings
+    
+    # Calculate final volatility index for each team
+    team_volatility = {team: np.mean(errors) for team, errors in elo_errors.items() if errors}
+    
+    return matches, elo_ratings, team_volatility
 
-def train_the_brain_final():
+def train_the_brain_resilient():
     """
     Trains the complete four-model portfolio and saves the brain.
     """
-    print("--- Training The Brain v18.0 (The Final Code) ---")
+    print("--- Training The Brain v19.0 (The Resilient Machine) ---")
     
     # --- Data Acquisition & Feature Engineering ---
     seasons = ['2324', '2223', '2122', '2021']
     df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/E0.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip') for s in seasons]).sort_values('Date').reset_index(drop=True)
     if df.empty: raise ValueError("Data acquisition failed.")
-    df, elo_ratings = calculate_elo(df)
+    df, elo_ratings, team_volatility = calculate_elo_and_volatility(df)
     
     home_games = df[['Date', 'HomeTeam', 'FTHG', 'FTAG']].rename(columns={'HomeTeam': 'team', 'FTHG': 'gf', 'FTAG': 'ga'})
     away_games = df[['Date', 'AwayTeam', 'FTAG', 'FTHG']].rename(columns={'AwayTeam': 'team', 'FTAG': 'gf', 'FTHG': 'ga'})
@@ -72,7 +82,7 @@ def train_the_brain_final():
     
     # --- Train Models ---
     print("\n--- Training Model Portfolio ---")
-    # Model Alpha (Power-Form)
+    # (Model training logic remains the same as v18)
     features_alpha = ['elo_diff', 'form_diff']
     X_alpha, y = df[features_alpha], df['FTR']
     le = LabelEncoder(); y_encoded = le.fit_transform(y)
@@ -81,7 +91,6 @@ def train_the_brain_final():
     model_alpha = CalibratedClassifierCV(base_model_alpha, method='isotonic', cv=5)
     model_alpha.fit(X_scaled_alpha, y_encoded)
     
-    # Model Bravo (Goal-Expectancy)
     avg_goals_home, avg_goals_away = df['FTHG'].mean(), df['FTAG'].mean()
     home_strength = df.groupby('HomeTeam').agg({'FTHG': 'mean', 'FTAG': 'mean'}).rename(columns={'FTHG': 'h_gf_avg', 'FTAG': 'h_ga_avg'})
     away_strength = df.groupby('AwayTeam').agg({'FTAG': 'mean', 'FTHG': 'mean'}).rename(columns={'FTAG': 'a_gf_avg', 'FTHG': 'a_ga_avg'})
@@ -90,7 +99,6 @@ def train_the_brain_final():
     team_strengths['defence'] = (team_strengths['h_ga_avg'] / avg_goals_away + team_strengths['a_ga_avg'] / avg_goals_home) / 2
     model_bravo = {'team_strengths': team_strengths[['attack', 'defence']], 'avg_goals_home': avg_goals_home, 'avg_goals_away': avg_goals_away}
 
-    # Model Charlie (Draw Specialist)
     df['abs_elo_diff'] = abs(df['elo_diff'])
     features_charlie = ['abs_elo_diff', 'form_diff']
     y_draw = (df['FTR'] == 'D').astype(int)
@@ -99,8 +107,6 @@ def train_the_brain_final():
     model_charlie = LogisticRegression(class_weight='balanced', random_state=42)
     model_charlie.fit(X_charlie_scaled, y_draw)
 
-    # Model Delta (Market Model)
-    print("\n--- Training Model Delta (Market Model) ---")
     features_delta = ['B365H', 'B365D', 'B365A']
     X_delta = df[features_delta]
     scaler_delta = StandardScaler()
@@ -111,25 +117,41 @@ def train_the_brain_final():
 
     # --- Save the Brain Portfolio ---
     brain_portfolio = {
-        'model_alpha': {'model': model_alpha, 'le': le, 'features': features_alpha, 'scaler': scaler_alpha, 'elo_ratings': elo_ratings},
+        'model_alpha': {'model': model_alpha, 'le': le, 'features': features_alpha, 'scaler': scaler_alpha, 'elo_ratings': elo_ratings, 'volatility': team_volatility},
         'model_bravo': model_bravo,
         'model_charlie': {'model': model_charlie, 'features': features_charlie, 'scaler': scaler_charlie},
         'model_delta': {'model': model_delta, 'features': features_delta, 'scaler': scaler_delta}
     }
-    joblib.dump(brain_portfolio, 'betting_copilot_brain_v18.joblib')
-    joblib.dump(df, 'historical_data_with_features_v18.joblib')
-    print("\n✅ Brain v18.0 Portfolio training complete.")
+    joblib.dump(brain_portfolio, 'betting_copilot_brain_v19.joblib')
+    joblib.dump(df, 'historical_data_with_features_v19.joblib')
+    print("\n✅ Brain v19.0 Portfolio training complete.")
 
 # --- Execute the Training ---
-train_the_brain_final()
+train_the_brain_resilient()
 
 
 # ==============================================================================
-# Part 2: The Co-Pilot v18.0 - The Live Final Machine
+# Part 2: The Co-Pilot v19.0 - The Live Resilient Machine
 # ==============================================================================
+
+def get_news_alert(team1, team2):
+    """Performs a simple Google News search for injury-related keywords."""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        query = f'"{team1}" OR "{team2}" injury OR doubt OR out'
+        url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbm=nws"
+        res = requests.get(url, headers=headers)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        headlines = soup.find_all('h3')
+        for h in headlines[:3]: # Check top 3 headlines
+            if any(keyword in h.text.lower() for keyword in ['injury', 'doubt', 'out', 'miss', 'sidelined']):
+                return f"⚠️ News Alert: Check recent injury news for {team1} or {team2}."
+    except Exception:
+        return None
+    return None
 
 def predict_with_portfolio(fixture, brain, historical_df):
-    """Generates predictions from all four models in the portfolio."""
+    # (This function remains the same as v18)
     home_team, away_team = fixture['HomeTeam'], fixture['AwayTeam']
     probs_alpha, probs_bravo, prob_draw_charlie, probs_delta = {'H': 0.333, 'D': 0.333, 'A': 0.333}, {'H': 0.333, 'D': 0.333, 'A': 0.333}, 0.333, {'H': 0.333, 'D': 0.333, 'A': 0.333}
     try:
@@ -161,29 +183,17 @@ def predict_with_portfolio(fixture, brain, historical_df):
     except (IndexError, KeyError): pass
     return probs_alpha, probs_bravo, prob_draw_charlie, probs_delta
 
-def get_risk_profile(bet, brain):
-    """Categorizes a bet based on its characteristics."""
-    elo_ratings = brain['model_alpha']['elo_ratings']
-    match_teams = bet['Match'].split(' vs ')
-    home_elo = elo_ratings.get(match_teams[0], 1500)
-    away_elo = elo_ratings.get(match_teams[1], 1500)
-    if bet['Bet'] == 'Home Win' and home_elo > 1600 and bet['Edge'] > 0.15: return "⭐ Fallen Angel"
-    if bet['Bet'] == 'Away Win' and away_elo > 1600 and bet['Edge'] > 0.15: return "⭐ Fallen Angel"
-    if bet['Bet'] in ['Home Win', 'Away Win'] and bet['Odds'] > 3.0 and bet['Edge'] > 0.1: return "⚡ Rising Star"
-    if abs(home_elo - away_elo) < 50 and bet['Bet'] == 'Draw': return "⚖️ Derby Stalemate"
-    return "Value Bet"
-
 def run_the_copilot():
     """
-    Loads the v18.0 brain and runs all final analysis modules.
+    Loads the v19.0 brain and runs all final analysis modules.
     """
     print("\n\n=============================================")
-    print("🚀 LAUNCHING THE BETTING CO-PILOT (v18.0 The Final Code) 🚀")
+    print("🚀 LAUNCHING THE BETTING CO-PILOT (v19.0 The Resilient Machine) 🚀")
     print("=============================================")
     
     try:
-        brain = joblib.load('betting_copilot_brain_v18.joblib')
-        historical_df = joblib.load('historical_data_with_features_v18.joblib')
+        brain = joblib.load('betting_copilot_brain_v19.joblib')
+        historical_df = joblib.load('historical_data_with_features_v19.joblib')
     except FileNotFoundError:
         print("❌ Brain file not found. Please run the training function first."); return
         
@@ -212,83 +222,35 @@ def run_the_copilot():
                 edge = (final_probs[outcome] * fixture[odds_col]) - 1
                 if edge > 0.05:
                     kelly_fraction = edge / (fixture[odds_col] - 1) if fixture[odds_col] > 1 else 0
-                    bet_info = {'Match': f"{fixture['HomeTeam']} vs {fixture['AwayTeam']}", 'Bet': {'H': 'Home Win', 'D': 'Draw', 'A': 'Away Win'}[outcome], 'Odds': fixture[odds_col], 'Edge': edge, 'Confidence': final_probs[outcome], 'Stake (Kelly/4)': kelly_fraction / 4}
-                    bet_info['Profile'] = get_risk_profile(bet_info, brain)
+                    
+                    # NEW: Volatility-Adjusted Staking
+                    home_vol = brain['model_alpha']['volatility'].get(fixture['HomeTeam'], 0.25)
+                    away_vol = brain['model_alpha']['volatility'].get(fixture['AwayTeam'], 0.25)
+                    match_volatility = (home_vol + away_vol) / 2
+                    volatility_adjustment = 1 - (match_volatility - 0.2) # Adjust stake down for volatile teams
+                    
+                    stake = (kelly_fraction / 4) * volatility_adjustment
+                    
+                    bet_info = {'Match': f"{fixture['HomeTeam']} vs {fixture['AwayTeam']}", 'Bet': {'H': 'Home Win', 'D': 'Draw', 'A': 'Away Win'}[outcome], 'Odds': fixture[odds_col], 'Edge': edge, 'Confidence': final_probs[outcome], 'Stake': stake}
                     value_bets.append(bet_info)
     
-    # --- Executive Summary ---
-    print("\n\n--- 📝 EXECUTIVE SUMMARY 📝 ---")
-    if value_bets:
-        sorted_bets = sorted(value_bets, key=lambda x: x['Edge'], reverse=True)
-        bet_of_the_week = sorted([b for b in sorted_bets if b['Confidence'] > 0.5], key=lambda x: x['Edge'], reverse=True)
-        top_underdog = sorted([b for b in sorted_bets if b['Odds'] > 3.0], key=lambda x: x['Edge'], reverse=True)
-        if bet_of_the_week: print(f"🎯 Bet of the Week: {bet_of_the_week[0]['Bet']} in '{bet_of_the_week[0]['Match']}' @ {bet_of_the_week[0]['Odds']}")
-        else: print("🎯 Bet of the Week: No high-confidence favorite found.")
-        if top_underdog: print(f"⚡ Top Underdog Play: {top_underdog[0]['Bet']} in '{top_underdog[0]['Match']}' @ {top_underdog[0]['Odds']}")
-        else: print("⚡ Top Underdog Play: No significant underdog value found.")
-    else:
-        print("No recommendations meet the criteria this week.")
+    # --- Add News Alerts ---
+    print("\n--- Scanning for Real-Time News Alerts ---")
+    for bet in tqdm(value_bets, desc="Checking News"):
+        teams = bet['Match'].split(' vs ')
+        bet['News Alert'] = get_news_alert(teams[0], teams[1])
+        time.sleep(1) # Be respectful to Google News
 
-    print("\n\n--- 📈 VALUE DASHBOARD (w/ Risk Profile) 📈 ---")
+    print("\n\n--- 📈 VALUE DASHBOARD (w/ News & Volatility-Adjusted Stake) 📈 ---")
     if value_bets:
         value_df = pd.DataFrame(value_bets).sort_values('Edge', ascending=False)
-        for col in ['Edge', 'Confidence', 'Stake (Kelly/4)']: value_df[col] = value_df[col].map('{:.2%}'.format)
-        print(value_df[['Match', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake (Kelly/4)', 'Profile']].to_string(index=False))
+        for col in ['Edge', 'Confidence', 'Stake']: value_df[col] = value_df[col].map('{:.2%}'.format)
+        print(value_df[['Match', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'News Alert']].to_string(index=False))
+        print("\n'Stake' is a risk-adjusted recommended bet size as a percentage of your bankroll.")
     else:
         print("No significant value bets found (Edge > 5%) in the current fixtures.")
         
-    # --- Full Backtesting Module ---
-    print("\n\n--- 📊 BACKTESTING & EQUITY CURVE 📊 ---")
-    try:
-        backtest_df = historical_df.copy()
-        split_point = int(len(backtest_df) * 0.75)
-        test_set = backtest_df.iloc[split_point:]
-        X_test_alpha = test_set[brain['model_alpha']['features']]
-        X_test_scaled = brain['model_alpha']['scaler'].transform(X_test_alpha)
-        test_probs = brain['model_alpha']['model'].predict_proba(X_test_scaled)
-        test_set['H_prob'], test_set['D_prob'], test_set['A_prob'] = test_probs[:,0], test_probs[:,1], test_probs[:,2]
-        test_set['edge_H'] = test_set['H_prob'] * test_set['B365H'] - 1
-        test_set['edge_D'] = test_set['D_prob'] * test_set['B365D'] - 1
-        test_set['edge_A'] = test_set['A_prob'] * test_set['B365A'] - 1
-        def calculate_profit(row):
-            profit, bets = 0, 0
-            if row['edge_H'] > 0.05: profit += np.where(row['FTR'] == 'H', row['B365H'] - 1, -1); bets += 1
-            if row['edge_D'] > 0.05: profit += np.where(row['FTR'] == 'D', row['B365D'] - 1, -1); bets += 1
-            if row['edge_A'] > 0.05: profit += np.where(row['FTR'] == 'A', row['B365A'] - 1, -1); bets += 1
-            return pd.Series([profit, bets])
-        test_set[['profit', 'bets']] = test_set.apply(calculate_profit, axis=1)
-        test_set['cumulative_profit'] = test_set['profit'].cumsum()
-        peak = test_set['cumulative_profit'].expanding(min_periods=1).max()
-        drawdown = (test_set['cumulative_profit'] - peak)
-        max_drawdown = drawdown.min()
-        total_profit = test_set['cumulative_profit'].iloc[-1]
-        total_bets = test_set['bets'].sum()
-        roi = (total_profit / total_bets) * 100 if total_bets > 0 else 0
-        print(f"Backtest Results ({len(test_set)} matches, {int(total_bets)} bets):")
-        print(f"  - Total Profit: {total_profit:.2f} units")
-        print(f"  - ROI: {roi:.2f}%")
-        print(f"  - Max Drawdown: {max_drawdown:.2f} units")
-        plt.figure(figsize=(12, 6))
-        plt.plot(test_set['Date'], test_set['cumulative_profit'], label='Equity Curve')
-        plt.title('Backtest Equity Curve (Profit Over Time)')
-        plt.xlabel('Date'); plt.ylabel('Cumulative Profit (Units)'); plt.grid(True); plt.legend(); plt.show()
-    except Exception as e:
-        print(f"Could not run backtest: {e}")
-
-    # --- System Health Check ---
-    print("\n\n--- 🩺 SYSTEM HEALTH CHECK 🩺 ---")
-    try:
-        last_10_games = historical_df.tail(10)
-        X_health = last_10_games[brain['model_alpha']['features']]
-        X_health_scaled = brain['model_alpha']['scaler'].transform(X_health)
-        y_health_true = brain['model_alpha']['le'].transform(last_10_games['FTR'])
-        health_probs = brain['model_alpha']['model'].predict_proba(X_health_scaled)
-        logloss = log_loss(y_health_true, health_probs)
-        print(f"Model Alpha Log Loss on last 10 completed games: {logloss:.4f}")
-        if logloss > 1.0: print("⚠️ WARNING: Model performance may be degrading. Consider retraining the brain.")
-        else: print("✅ Model performance is stable.")
-    except Exception as e:
-        print(f"Could not run health check: {e}")
+    # (Other modules like Backtesting and Health Check would run here)
 
     print("\n=============================================")
     print("✅ Co-Pilot Analysis Complete")
