@@ -1,7 +1,7 @@
 # ==============================================================================
 # Part 0: Setup and Dependencies
 # ==============================================================================
-!pip install pandas scikit-learn xgboost joblib tqdm matplotlib beautifulsoup4 requests
+pip install pandas scikit-learn xgboost joblib tqdm matplotlib beautifulsoup4 requests
 
 import pandas as pd
 import numpy as np
