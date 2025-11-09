@@ -1,11 +1,11 @@
 # ==============================================================================
-# Part 0: Setup and Dependencies
+# backend_runner.py - The "Resilient Machine" Automated Backend Engine (Corrected)
 # ==============================================================================
-pip install pandas scikit-learn xgboost joblib tqdm matplotlib beautifulsoup4 requests
 
+# Part 0: All imports are now at the top of the file.
 import pandas as pd
 import numpy as np
-from tqdm.notebook import tqdm
+from tqdm import tqdm # Use the standard tqdm for scripts
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 import xgboost as xgb
 from sklearn.calibration import CalibratedClassifierCV
@@ -19,6 +19,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
 import requests
 from bs4 import BeautifulSoup
+import time
 
 warnings.filterwarnings('ignore')
 
@@ -33,6 +34,7 @@ def calculate_elo_and_volatility(matches):
     elo_errors = {team: [] for team in teams} # To track prediction errors
     
     home_elos, away_elos = [], []
+    # Use tqdm directly on the iterable for script compatibility
     for i, row in tqdm(matches.iterrows(), total=len(matches), desc="Calculating Elo & Volatility"):
         h, a = row['HomeTeam'], row['AwayTeam']
         r_h, r_a = elo_ratings.get(h, 1500), elo_ratings.get(a, 1500)
@@ -41,7 +43,6 @@ def calculate_elo_and_volatility(matches):
         e_h = 1 / (1 + 10**((r_a - r_h) / 400))
         s_h = 1 if row['FTR'] == 'H' else 0 if row['FTR'] == 'A' else 0.5
         
-        # Track error
         error = abs(s_h - e_h)
         elo_errors[h].append(error)
         elo_errors[a].append(error)
@@ -51,8 +52,6 @@ def calculate_elo_and_volatility(matches):
         elo_ratings[a] += k_factor * ((1-s_h) - (1-e_h))
         
     matches['HomeElo'], matches['AwayElo'] = home_elos, away_elos
-    
-    # Calculate final volatility index for each team
     team_volatility = {team: np.mean(errors) for team, errors in elo_errors.items() if errors}
     
     return matches, elo_ratings, team_volatility
@@ -63,7 +62,6 @@ def train_the_brain_resilient():
     """
     print("--- Training The Brain v19.0 (The Resilient Machine) ---")
     
-    # --- Data Acquisition & Feature Engineering ---
     seasons = ['2324', '2223', '2122', '2021']
     df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/E0.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip') for s in seasons]).sort_values('Date').reset_index(drop=True)
     if df.empty: raise ValueError("Data acquisition failed.")
@@ -80,9 +78,7 @@ def train_the_brain_resilient():
     df['elo_diff'] = df['HomeElo'] - df['AwayElo']
     df['form_diff'] = df['H_form_gd'] - df['A_form_gd']
     
-    # --- Train Models ---
     print("\n--- Training Model Portfolio ---")
-    # (Model training logic remains the same as v18)
     features_alpha = ['elo_diff', 'form_diff']
     X_alpha, y = df[features_alpha], df['FTR']
     le = LabelEncoder(); y_encoded = le.fit_transform(y)
@@ -115,7 +111,6 @@ def train_the_brain_resilient():
     model_delta = CalibratedClassifierCV(base_model_delta, method='isotonic', cv=5)
     model_delta.fit(X_delta_scaled, y_encoded)
 
-    # --- Save the Brain Portfolio ---
     brain_portfolio = {
         'model_alpha': {'model': model_alpha, 'le': le, 'features': features_alpha, 'scaler': scaler_alpha, 'elo_ratings': elo_ratings, 'volatility': team_volatility},
         'model_bravo': model_bravo,
@@ -125,10 +120,7 @@ def train_the_brain_resilient():
     joblib.dump(brain_portfolio, 'betting_copilot_brain_v19.joblib')
     joblib.dump(df, 'historical_data_with_features_v19.joblib')
     print("\n✅ Brain v19.0 Portfolio training complete.")
-
-# --- Execute the Training ---
-train_the_brain_resilient()
-
+    return brain_portfolio, df
 
 # ==============================================================================
 # Part 2: The Co-Pilot v19.0 - The Live Resilient Machine
@@ -142,16 +134,16 @@ def get_news_alert(team1, team2):
         url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbm=nws"
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, 'html.parser')
-        headlines = soup.find_all('h3')
-        for h in headlines[:3]: # Check top 3 headlines
-            if any(keyword in h.text.lower() for keyword in ['injury', 'doubt', 'out', 'miss', 'sidelined']):
-                return f"⚠️ News Alert: Check recent injury news for {team1} or {team2}."
+        headlines = soup.find_all('div', {'role': 'heading'}) # More reliable selector
+        for h in headlines[:3]:
+            if any(keyword in h.text.lower() for keyword in ['injury', 'doubt', 'out', 'miss', 'sidelined', 'unavailable']):
+                return f"⚠️ Check News: {h.text}"
     except Exception:
         return None
     return None
 
 def predict_with_portfolio(fixture, brain, historical_df):
-    # (This function remains the same as v18)
+    # (This function remains the same)
     home_team, away_team = fixture['HomeTeam'], fixture['AwayTeam']
     probs_alpha, probs_bravo, prob_draw_charlie, probs_delta = {'H': 0.333, 'D': 0.333, 'A': 0.333}, {'H': 0.333, 'D': 0.333, 'A': 0.333}, 0.333, {'H': 0.333, 'D': 0.333, 'A': 0.333}
     try:
@@ -183,78 +175,61 @@ def predict_with_portfolio(fixture, brain, historical_df):
     except (IndexError, KeyError): pass
     return probs_alpha, probs_bravo, prob_draw_charlie, probs_delta
 
-def run_the_copilot():
+def run_backend_analysis():
     """
-    Loads the v19.0 brain and runs all final analysis modules.
+    The main backend function.
     """
-    print("\n\n=============================================")
-    print("🚀 LAUNCHING THE BETTING CO-PILOT (v19.0 The Resilient Machine) 🚀")
-    print("=============================================")
+    print("--- Starting Daily Backend Analysis ---")
+    pd.DataFrame([]).to_csv('latest_bets.csv', index=False)
     
     try:
-        brain = joblib.load('betting_copilot_brain_v19.joblib')
-        historical_df = joblib.load('historical_data_with_features_v19.joblib')
-    except FileNotFoundError:
-        print("❌ Brain file not found. Please run the training function first."); return
+        brain, historical_df = train_the_brain_resilient()
         
-    print("\n--- Downloading Real Upcoming Fixtures ---")
-    try:
+        print("\n--- Downloading Real Upcoming Fixtures ---")
         fixtures_df = pd.read_csv('https://www.football-data.co.uk/fixtures.csv', encoding='latin1')
-        fixtures_df = fixtures_df[fixtures_df['Div'] == 'E0']
-        if fixtures_df.empty: print("No upcoming Premier League fixtures found."); return
-        print(f"Found {len(fixtures_df)} upcoming Premier League matches.")
-    except Exception as e:
-        print(f"❌ Could not fetch fixtures: {e}"); return
+        league_col = 'Div' if 'Div' in fixtures_df.columns else 'League'
+        if league_col not in fixtures_df.columns: raise ValueError("Could not find league identifier column.")
+        epl_fixtures = fixtures_df[fixtures_df[league_col] == 'E0']
+        if epl_fixtures.empty: print("No upcoming EPL fixtures found."); return
 
-    # --- Analyze Each Fixture with the Portfolio ---
-    value_bets = []
-    for index, fixture in tqdm(fixtures_df.iterrows(), total=len(fixtures_df), desc="Analyzing Live Fixtures"):
-        probs_alpha, probs_bravo, prob_draw_charlie, probs_delta = predict_with_portfolio(fixture, brain, historical_df)
-        final_probs = {
-            'H': (probs_alpha['H'] * 0.5 + probs_bravo['H'] * 0.3) * 0.8 + probs_delta['H'] * 0.2,
-            'A': (probs_alpha['A'] * 0.5 + probs_bravo['A'] * 0.3) * 0.8 + probs_delta['A'] * 0.2,
-            'D': (probs_alpha['D'] * 0.4 + probs_bravo['D'] * 0.2 + prob_draw_charlie * 0.2) * 0.8 + probs_delta['D'] * 0.2
-        }
-        total_prob = sum(final_probs.values())
-        final_probs = {k: v / total_prob for k, v in final_probs.items()}
-        for outcome, odds_col in [('H', 'B365H'), ('D', 'B365D'), ('A', 'B365A')]:
-            if pd.notna(fixture[odds_col]) and fixture[odds_col] > 0:
-                edge = (final_probs[outcome] * fixture[odds_col]) - 1
-                if edge > 0.05:
-                    kelly_fraction = edge / (fixture[odds_col] - 1) if fixture[odds_col] > 1 else 0
-                    
-                    # NEW: Volatility-Adjusted Staking
-                    home_vol = brain['model_alpha']['volatility'].get(fixture['HomeTeam'], 0.25)
-                    away_vol = brain['model_alpha']['volatility'].get(fixture['AwayTeam'], 0.25)
-                    match_volatility = (home_vol + away_vol) / 2
-                    volatility_adjustment = 1 - (match_volatility - 0.2) # Adjust stake down for volatile teams
-                    
-                    stake = (kelly_fraction / 4) * volatility_adjustment
-                    
-                    bet_info = {'Match': f"{fixture['HomeTeam']} vs {fixture['AwayTeam']}", 'Bet': {'H': 'Home Win', 'D': 'Draw', 'A': 'Away Win'}[outcome], 'Odds': fixture[odds_col], 'Edge': edge, 'Confidence': final_probs[outcome], 'Stake': stake}
-                    value_bets.append(bet_info)
-    
-    # --- Add News Alerts ---
-    print("\n--- Scanning for Real-Time News Alerts ---")
-    for bet in tqdm(value_bets, desc="Checking News"):
-        teams = bet['Match'].split(' vs ')
-        bet['News Alert'] = get_news_alert(teams[0], teams[1])
-        time.sleep(1) # Be respectful to Google News
-
-    print("\n\n--- 📈 VALUE DASHBOARD (w/ News & Volatility-Adjusted Stake) 📈 ---")
-    if value_bets:
-        value_df = pd.DataFrame(value_bets).sort_values('Edge', ascending=False)
-        for col in ['Edge', 'Confidence', 'Stake']: value_df[col] = value_df[col].map('{:.2%}'.format)
-        print(value_df[['Match', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'News Alert']].to_string(index=False))
-        print("\n'Stake' is a risk-adjusted recommended bet size as a percentage of your bankroll.")
-    else:
-        print("No significant value bets found (Edge > 5%) in the current fixtures.")
+        value_bets = []
+        for index, fixture in tqdm(epl_fixtures.iterrows(), total=len(epl_fixtures), desc="Analyzing Live Fixtures"):
+            probs_alpha, probs_bravo, prob_draw_charlie, probs_delta = predict_with_portfolio(fixture, brain, historical_df)
+            final_probs = {
+                'H': (probs_alpha['H'] * 0.5 + probs_bravo['H'] * 0.3) * 0.8 + probs_delta['H'] * 0.2,
+                'A': (probs_alpha['A'] * 0.5 + probs_bravo['A'] * 0.3) * 0.8 + probs_delta['A'] * 0.2,
+                'D': (probs_alpha['D'] * 0.4 + probs_bravo['D'] * 0.2 + prob_draw_charlie * 0.2) * 0.8 + probs_delta['D'] * 0.2
+            }
+            total_prob = sum(final_probs.values())
+            final_probs = {k: v / total_prob for k, v in final_probs.items()}
+            for outcome, odds_col in [('H', 'B365H'), ('D', 'B365D'), ('A', 'B365A')]:
+                if pd.notna(fixture[odds_col]) and fixture[odds_col] > 0:
+                    edge = (final_probs[outcome] * fixture[odds_col]) - 1
+                    if edge > 0.05:
+                        kelly_fraction = edge / (fixture[odds_col] - 1) if fixture[odds_col] > 1 else 0
+                        home_vol = brain['model_alpha']['volatility'].get(fixture['HomeTeam'], 0.25)
+                        away_vol = brain['model_alpha']['volatility'].get(fixture['AwayTeam'], 0.25)
+                        match_volatility = (home_vol + away_vol) / 2
+                        volatility_adjustment = 1 - (match_volatility - 0.2)
+                        stake = (kelly_fraction / 4) * volatility_adjustment
+                        bet_info = {'Match': f"{fixture['HomeTeam']} vs {fixture['AwayTeam']}", 'Bet': {'H': 'Home Win', 'D': 'Draw', 'A': 'Away Win'}[outcome], 'Odds': fixture[odds_col], 'Edge': edge, 'Confidence': final_probs[outcome], 'Stake': stake}
+                        value_bets.append(bet_info)
         
-    # (Other modules like Backtesting and Health Check would run here)
+        print("\n--- Scanning for Real-Time News Alerts ---")
+        for bet in tqdm(value_bets, desc="Checking News"):
+            teams = bet['Match'].split(' vs ')
+            bet['News Alert'] = get_news_alert(teams[0], teams[1])
+            time.sleep(1)
 
-    print("\n=============================================")
-    print("✅ Co-Pilot Analysis Complete")
-    print("=============================================")
+        if value_bets:
+            results_df = pd.DataFrame(value_bets)
+            results_df.to_csv('latest_bets.csv', index=False)
+            print(f"\nSuccessfully saved {len(results_df)} recommendations to latest_bets.csv")
+        else:
+            print("\nNo value bets found.")
+    
+    except Exception as e:
+        print(f"An error occurred during the backend run: {e}")
 
-# --- Run the Co-Pilot ---
-run_the_copilot()
+if __name__ == "__main__":
+    run_backend_analysis()
