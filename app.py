@@ -1,6 +1,5 @@
 # app.py
-# This is the "Ultimate Cockpit" for your Betting Co-Pilot.
-# A complete, multi-page, interactive Streamlit application.
+# This is the "Perfected Cockpit" for your Betting Co-Pilot.
 
 import streamlit as st
 import pandas as pd
@@ -33,7 +32,6 @@ DATA_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/m
 def load_data():
     """Intelligently loads data from the GitHub repo."""
     try:
-        # Use requests to check for file existence first
         import requests
         response = requests.get(DATA_URL)
         if response.status_code == 404:
@@ -43,7 +41,6 @@ def load_data():
         if df.empty:
             return "NO_BETS_FOUND"
         
-        # Ensure correct data types for filtering
         for col in ['Edge', 'Confidence', 'Odds']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -74,7 +71,6 @@ def main_dashboard():
         if selected_sport != "All Sports":
             value_df = value_df[value_df['Sport'] == selected_sport]
 
-        # Only show league filter if it's soccer
         if selected_sport == "Soccer" and 'League' in value_df.columns:
             available_leagues = ["All Leagues"] + list(value_df['League'].unique())
             selected_league = st.sidebar.selectbox("Filter by League", available_leagues)
@@ -104,17 +100,31 @@ def main_dashboard():
         # --- Main Value Dashboard with Deep Dive ---
         st.header("📈 Value Dashboard")
         if not filtered_df.empty:
-            st.dataframe(filtered_df.style.format({
-                'Odds': '{:.2f}', 
-                'Edge': '{:.2%}', 
-                'Confidence': '{:.2%}'
+            # Add a unique key for checkboxes
+            filtered_df['key'] = filtered_df['Match'] + "_" + filtered_df['Bet']
+            
+            st.dataframe(filtered_df[['Sport', 'League', 'Match', 'Bet', 'Odds', 'Edge', 'Confidence']].style.format({
+                'Odds': '{:.2f}', 'Edge': '{:.2%}', 'Confidence': '{:.2%}'
             }).background_gradient(cmap='Greens', subset=['Edge']))
 
             st.subheader("Deep Dive Analysis")
             for i, row in filtered_df.iterrows():
                 with st.expander(f"{row['Match']} - {row['Bet']} @ {row['Odds']:.2f}"):
                     st.write(f"**Edge:** {row['Edge']:.2%} | **Model Confidence:** {row['Confidence']:.2%}")
-                    st.info("Future Upgrade: This section will show a breakdown of each model's individual probability, Head-to-Head stats, and recent form.")
+                    # *** NEW: Stake Explanation ***
+                    if 'Stake (Kelly/4)' in row:
+                         st.write(f"**Recommended Stake:** {float(row['Stake (Kelly/4)']):.2%} of Bankroll (Quarter-Kelly Strategy)")
+                    
+                    # Add to Bet Slip functionality
+                    is_in_slip = any(bet['key'] == row['key'] for bet in st.session_state.bet_slip)
+                    if st.checkbox("Add to my personal Bet Slip", value=is_in_slip, key=row['key']):
+                        if not is_in_slip:
+                            st.session_state.bet_slip.append(row.to_dict())
+                            st.rerun()
+                    else:
+                        if is_in_slip:
+                            st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != row['key']]
+                            st.rerun()
         else:
             st.info("No bets match the current filter criteria.")
 
@@ -154,6 +164,24 @@ def market_map_page():
     else:
         st.info("No data loaded to display the market map.")
 
+def bet_tracker_page():
+    """A page for the personal bet slip and tracker."""
+    st.title("🎟️ Personal Bet Slip & Tracker")
+    
+    if 'bet_slip' not in st.session_state:
+        st.session_state.bet_slip = []
+        
+    st.subheader("My Current Bet Slip")
+    if st.session_state.bet_slip:
+        slip_df = pd.DataFrame(st.session_state.bet_slip)
+        st.dataframe(slip_df[['Match', 'Bet', 'Odds', 'Edge', 'Confidence']].style.format({'Odds': '{:.2f}', 'Edge': '{:.2%}', 'Confidence': '{:.2%}'}))
+        
+        if st.button("Clear Bet Slip"):
+            st.session_state.bet_slip = []
+            st.rerun()
+    else:
+        st.info("Your bet slip is empty. Select bets from the Main Dashboard to add them.")
+
 def about_page():
     """A page explaining how the Co-Pilot works."""
     st.title("📖 About the Co-Pilot")
@@ -178,13 +206,24 @@ def about_page():
 # Sidebar Navigation & Main App Execution
 # ==============================================================================
 st.sidebar.title("Navigation")
-# Using a dictionary for page navigation is a more robust pattern
+
+# *** NEW: Manual Refresh Button ***
+if st.sidebar.button("🔄 Refresh Data"):
+    load_data.clear()
+    st.rerun()
+
+# *** FIX: Added Bet Tracker to the menu ***
 PAGES = {
     "Main Dashboard": main_dashboard,
     "Market Map": market_map_page,
+    "Bet Tracker": bet_tracker_page,
     "About the Co-Pilot": about_page
 }
 selection = st.sidebar.radio("Go to", list(PAGES.keys()))
+
+if 'bet_slip' not in st.session_state:
+    st.session_state.bet_slip = []
+
 page = PAGES[selection]
 page()
 
