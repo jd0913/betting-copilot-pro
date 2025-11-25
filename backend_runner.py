@@ -1,6 +1,6 @@
 # ==============================================================================
-# backend_runner.py - The "God Tier" Automated Backend (v22.0)
-# Features: Auto-Tuning, Four Factors (NBA), YPP (NFL), Rest Days (Soccer)
+# backend_runner.py - The "Connected God Tier" Engine (v23.0)
+# Features: Auto-Tuning, Advanced Stats (xG/YPP/Four Factors), Discord Alerts
 # ==============================================================================
 import pandas as pd
 import numpy as np
@@ -14,7 +14,7 @@ import warnings
 import nfl_data_py as nfl
 from nba_api.stats.endpoints import leaguedashteamstats
 import requests
-from bs4 import BeautifulSoup
+import json
 import time
 from datetime import datetime, timedelta
 
@@ -37,26 +37,24 @@ def tune_xgboost(X, y, objective='multi:softprob', metric='mlogloss'):
     }
     
     clf = xgb.XGBClassifier(objective=objective, eval_metric=metric, use_label_encoder=False)
-    # Use TimeSeriesSplit to prevent data leakage (training on future to predict past)
+    # Use TimeSeriesSplit to prevent data leakage
     cv = TimeSeriesSplit(n_splits=3)
     
-    search = RandomizedSearchCV(clf, param_distributions=param_dist, n_iter=10, scoring='neg_log_loss', cv=cv, verbose=0, n_jobs=-1, random_state=42)
+    search = RandomizedSearchCV(clf, param_distributions=param_dist, n_iter=5, scoring='neg_log_loss', cv=cv, verbose=0, n_jobs=-1, random_state=42)
     search.fit(X, y)
     
-    print(f"   > Best Params: {search.best_params_}")
     return search.best_estimator_
 
 # ==============================================================================
 # MODULE 1: SOCCER (Elo + Poisson + Rest Days + Shot Dominance)
 # ==============================================================================
 def calculate_soccer_features(df):
-    # 1. Elo Ratings
     teams = pd.concat([df['HomeTeam'], df['AwayTeam']]).unique()
     elo_ratings = {team: 1500 for team in teams}
     k_factor = 20
     home_elos, away_elos = [], []
     
-    # 2. Rest Days Calculation
+    # Rest Days Calculation
     last_match_date = {team: pd.to_datetime('2000-01-01') for team in teams}
     home_rest, away_rest = [], []
 
@@ -82,15 +80,14 @@ def calculate_soccer_features(df):
     df['HomeElo'], df['AwayElo'] = home_elos, away_elos
     df['HomeRest'], df['AwayRest'] = home_rest, away_rest
     
-    # 3. Shot Dominance (Proxy for xG)
-    # HST = Home Shots on Target, AST = Away Shots on Target
+    # Shot Dominance (Proxy for xG)
     df['HomeShotDom'] = df.groupby('HomeTeam')['HST'].transform(lambda x: x.rolling(5, min_periods=1).mean())
     df['AwayShotDom'] = df.groupby('AwayTeam')['AST'].transform(lambda x: x.rolling(5, min_periods=1).mean())
     
     return df, elo_ratings
 
 def run_soccer_module():
-    print("--- Running Soccer Module (V22.0) ---")
+    print("--- Running Soccer Module (V23.0) ---")
     SOCCER_LEAGUE_CONFIG = {"E0": "Premier League", "SP1": "La Liga", "I1": "Serie A", "D1": "Bundesliga", "F1": "Ligue 1"}
     all_soccer_bets = []
     
@@ -137,10 +134,7 @@ def run_soccer_module():
                 
                 # 1. Model Alpha Prediction
                 h_elo, a_elo = elo_ratings.get(h, 1500), elo_ratings.get(a, 1500)
-                # Assume 7 days rest for future games as default
                 feat_row = pd.DataFrame([{'elo_diff': h_elo - a_elo, 'rest_diff': 0, 'shot_diff': 0}]) 
-                # (Note: In a full prod system, we'd look up recent shot stats for the live teams here)
-                
                 feat_scaled = scaler.transform(feat_row)
                 probs_alpha = calibrated_model.predict_proba(feat_scaled)[0]
                 
@@ -166,7 +160,6 @@ def run_soccer_module():
                     'Away Win': probs_alpha[le.transform(['A'])[0]] * 0.6 + p_a * 0.4
                 }
                 
-                # Normalize
                 total = sum(final_probs.values())
                 final_probs = {k: v/total for k,v in final_probs.items()}
 
@@ -185,23 +178,18 @@ def run_soccer_module():
 # MODULE 2: NFL (Yards Per Play + Turnovers + Tuning)
 # ==============================================================================
 def run_nfl_module():
-    print("--- Running NFL Module (V22.0) ---")
+    print("--- Running NFL Module (V23.0) ---")
     nfl_bets = []
     try:
         seasons = [2023, 2022, 2021]
         df = nfl.import_pbp_data(years=seasons, downcast=True, cache=False)
         
         # Advanced Feature Engineering
-        # Calculate Yards Per Play (YPP) and Turnover Differential
-        # This is a simplified aggregation for the example
         team_stats = df.groupby(['season', 'home_team']).agg({'yards_gained': 'mean', 'turnover_lost': 'mean'}).reset_index()
         team_stats.rename(columns={'home_team': 'team', 'yards_gained': 'ypp_off', 'turnover_lost': 'tov_off'}, inplace=True)
         
-        # Create a simple power rating based on YPP
-        # (In a full system, you'd merge this back to every game)
         power_map = team_stats.groupby('team')['ypp_off'].mean().to_dict()
         
-        # Schedule & Odds
         schedule = nfl.import_schedules(years=[2024])
         weekly_odds = nfl.import_weekly_data(years=[2024])
         
@@ -215,24 +203,20 @@ def run_nfl_module():
         
         for i, game in upcoming_games.iterrows():
             h, a = game['home_team'], game['away_team']
-            # Map team names if necessary (NFL data usually consistent)
-            
             odds_row = upcoming_odds[(upcoming_odds['home_team'] == h) & (upcoming_odds['away_team'] == a)]
             if odds_row.empty: continue
             game_odds = odds_row.iloc[0]
             
-            # Prediction Logic: Compare YPP
             h_ypp = power_map.get(h, 5.0)
             a_ypp = power_map.get(a, 5.0)
             
-            # Simple heuristic: 1 yard per play diff ~= 7 points
-            pred_margin = (h_ypp - a_ypp) * 7 + 2.5 # +2.5 for home field
-            
+            # Heuristic: 1 yard per play diff ~= 7 points
+            pred_margin = (h_ypp - a_ypp) * 7 + 2.5 
             spread_line = game_odds['spread_line']
             
-            if pred_margin > (spread_line * -1) + 1.5: # 1.5 point buffer
+            if pred_margin > (spread_line * -1) + 1.5:
                 edge = pred_margin - (spread_line * -1)
-                nfl_bets.append({'Sport': 'NFL', 'League': 'NFL', 'Match': f"{a} @ {h}", 'Bet Type': 'Point Spread', 'Bet': f"{h} {spread_line}", 'Odds': 1.91, 'Edge': edge/10, 'Confidence': 0.60}) # Normalized edge
+                nfl_bets.append({'Sport': 'NFL', 'League': 'NFL', 'Match': f"{a} @ {h}", 'Bet Type': 'Point Spread', 'Bet': f"{h} {spread_line}", 'Odds': 1.91, 'Edge': edge/10, 'Confidence': 0.60})
                 
     except Exception as e:
         print(f"!! NFL MODULE ERROR: {e}")
@@ -242,30 +226,21 @@ def run_nfl_module():
 # MODULE 3: NBA (Four Factors Model)
 # ==============================================================================
 def run_nba_module():
-    print("--- Running NBA Module (V22.0) ---")
+    print("--- Running NBA Module (V23.0) ---")
     nba_bets = []
     try:
-        # Fetch Four Factors
-        # eFG%, TOV%, ORB%, FT Rate
         stats = leaguedashteamstats.LeagueDashTeamStats(season="2023-24", measure_type_detailed_defense="Four Factors").get_data_frames()[0]
-        
-        # Create an Efficiency Rating (Weighted Four Factors)
-        # Weights: eFG (40%), TOV (25%), ORB (20%), FT (15%)
         stats['EFF_RATING'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15)
-        
         team_power = stats.set_index('TEAM_ABBREVIATION')['EFF_RATING'].to_dict()
         
-        # Placeholder for live schedule scraping (NBA API schedule endpoint is complex)
-        # We will simulate one game to show the logic works
-        upcoming_games = [{'home': 'BOS', 'away': 'LAL', 'spread': -6.5}]
+        # Placeholder for live schedule (NBA API schedule endpoint is complex)
+        upcoming_games = [] # Add logic here if you have a reliable NBA schedule source
         
         for game in upcoming_games:
             h, a = game['home'], game['away']
             h_eff = team_power.get(h, 0.5)
             a_eff = team_power.get(a, 0.5)
-            
-            # Heuristic: 0.01 diff in Eff Rating ~= 2 points
-            pred_margin = (h_eff - a_eff) * 200 + 3 # +3 Home Court
+            pred_margin = (h_eff - a_eff) * 200 + 3
             
             if pred_margin > (game['spread'] * -1):
                 edge = pred_margin - (game['spread'] * -1)
@@ -277,13 +252,50 @@ def run_nba_module():
     return pd.DataFrame(nba_bets)
 
 # ==============================================================================
+# NOTIFICATION SYSTEM
+# ==============================================================================
+def send_discord_alert(df):
+    """Sends a summary of value bets to a Discord channel."""
+    
+    # ==========================================================================
+    # PASTE YOUR DISCORD WEBHOOK URL HERE
+    WEBHOOK_URL = "YOUR_DISCORD_WEBHOOK_URL_HERE" 
+    # ==========================================================================
+    
+    if "YOUR_DISCORD_WEBHOOK_URL_HERE" in WEBHOOK_URL:
+        print("No Discord Webhook provided. Skipping notification.")
+        return
+
+    if df.empty:
+        msg = "🤖 **Betting Co-Pilot Report:**\nNo value bets found today. Market is quiet."
+    else:
+        top_bets = df[df['Edge'] > 0.05].sort_values('Edge', ascending=False).head(5)
+        msg = f"🚀 **Betting Co-Pilot: {len(df)} Opportunities Found!**\n\n"
+        
+        for i, row in top_bets.iterrows():
+            sport_icon = "⚽" if row['Sport'] == "Soccer" else "🏈" if row['Sport'] == "NFL" else "🏀"
+            msg += f"{sport_icon} **{row['Match']}**\n"
+            msg += f"   👉 {row['Bet']} @ {row['Odds']:.2f}\n"
+            msg += f"   📈 Edge: {row['Edge']:.2%} | 💰 Stake: {row['Stake']:.2%}\n\n"
+        
+        if len(df) > 5:
+            msg += f"...and {len(df) - 5} more. Check the Dashboard!"
+
+    payload = {"content": msg}
+    try:
+        requests.post(WEBHOOK_URL, json=payload)
+        print("Discord notification sent.")
+    except Exception as e:
+        print(f"Failed to send Discord notification: {e}")
+
+# ==============================================================================
 # MAIN EXECUTION
 # ==============================================================================
 def run_backend_analysis():
     print("--- Starting Daily Global Backend Analysis ---")
     
     # Initialize empty file
-    pd.DataFrame(columns=['Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence']).to_csv('latest_bets.csv', index=False)
+    pd.DataFrame(columns=['Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake']).to_csv('latest_bets.csv', index=False)
     
     soccer_bets = run_soccer_module()
     nfl_bets = run_nfl_module()
@@ -293,15 +305,15 @@ def run_backend_analysis():
     
     if not all_bets.empty:
         # Calculate Kelly Stake
-        # Stake = (Edge / (Odds - 1)) * 0.25 (Quarter Kelly)
-        # Note: Edge here is decimal (0.10 = 10%). 
         all_bets['Stake'] = (all_bets['Edge'] / (all_bets['Odds'] - 1)) * 0.25
-        all_bets['Stake'] = all_bets['Stake'].clip(lower=0.0, upper=0.05) # Cap at 5% bankroll
+        all_bets['Stake'] = all_bets['Stake'].clip(lower=0.0, upper=0.05)
         
         all_bets.to_csv('latest_bets.csv', index=False)
         print(f"\nSuccessfully saved {len(all_bets)} recommendations.")
+        send_discord_alert(all_bets)
     else:
         print("\nNo value bets found.")
+        send_discord_alert(pd.DataFrame())
 
 if __name__ == "__main__":
     run_backend_analysis()
