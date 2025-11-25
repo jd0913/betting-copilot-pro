@@ -1,6 +1,6 @@
 # app.py
-# The "God Mode" Cockpit v21.0
-# Features: Bankroll Sim, Visual Polish, Edge Meters, Mobile Optimization
+# The "Fusion Edition" Cockpit v25.0
+# Combines "God Mode" Visuals with "Ultimate" Analytics & Filtering
 
 import streamlit as st
 import pandas as pd
@@ -18,9 +18,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# REPLACE WITH YOUR DETAILS
+# ------------------------------------------------------------------------------
+# IMPORTANT: CONFIGURE YOUR GITHUB REPOSITORY DETAILS HERE
+# ------------------------------------------------==============================
 GITHUB_USERNAME = "jd0913"
 GITHUB_REPO = "betting-copilot-pro"
+# ------------------------------------------------------------------------------
 
 LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
 HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/betting_history.csv"
@@ -50,12 +53,16 @@ def get_team_emoji(sport):
     if sport == "NBA": return "🏀"
     return "🏅"
 
-def color_edge(val):
-    color = 'red'
-    if val > 0.05: color = 'orange'
-    if val > 0.10: color = 'green'
-    if val > 0.20: color = 'blue' # Super value
-    return f'color: {color}'
+def get_risk_profile(row):
+    """Re-calculates the risk profile on the fly for display."""
+    edge = row['Edge']
+    odds = row['Odds']
+    conf = row['Confidence']
+    
+    if odds > 3.5 and edge > 0.15: return "⚡ Rising Star (High Risk/Reward)"
+    if conf > 0.60 and edge > 0.05: return "⭐ High Confidence Anchor"
+    if row['Bet'] == 'Draw': return "⚖️ Value Draw"
+    return "✅ Standard Value"
 
 # ==============================================================================
 # PAGES
@@ -64,68 +71,103 @@ def color_edge(val):
 def dashboard_page():
     st.title("🚀 Live Command Center")
     
-    # --- 1. Bankroll Management Sidebar ---
-    st.sidebar.header("💰 Bankroll Manager")
-    bankroll = st.sidebar.number_input("Current Bankroll ($)", value=1000, step=100)
-    kelly_multiplier = st.sidebar.slider("Risk Appetite (Kelly Multiplier)", 0.1, 1.0, 0.25, help="1.0 is Full Kelly (High Risk). 0.25 is Quarter Kelly (Professional Standard).")
-    
     df = load_data(LATEST_URL)
     
+    # --- SIDEBAR CONTROLS ---
+    st.sidebar.header("💰 Bankroll Strategy")
+    bankroll = st.sidebar.number_input("Bankroll Size ($)", value=1000, step=100)
+    kelly_multiplier = st.sidebar.slider("Kelly Multiplier", 0.1, 1.0, 0.25, help="Recommended: 0.25 (Quarter Kelly)")
+    
+    st.sidebar.header("🔍 Advanced Filters")
+    
     if isinstance(df, pd.DataFrame):
-        # --- 2. Global Filters ---
+        # 1. Sport Filter
         sports = ["All"] + list(df['Sport'].unique()) if 'Sport' in df.columns else ["All"]
         selected_sport = st.sidebar.selectbox("Filter Sport", sports)
         if selected_sport != "All":
             df = df[df['Sport'] == selected_sport]
 
-        # --- 3. KPI Row ---
-        total_bets = len(df)
-        avg_edge = df['Edge'].mean()
-        # Calculate total potential profit for the day
-        # Stake = Bankroll * Stake_Pct * Kelly_Mult
-        # Profit = Stake * (Odds - 1)
-        df['Calc_Stake_Cash'] = bankroll * df['Stake'] * (kelly_multiplier / 0.25) # Adjusting because backend assumes 0.25
-        df['Potential_Profit'] = df['Calc_Stake_Cash'] * (df['Odds'] - 1)
-        total_potential_profit = df['Potential_Profit'].sum()
-        total_risk = df['Calc_Stake_Cash'].sum()
+        # 2. League Filter (Dynamic)
+        if 'League' in df.columns:
+            leagues = ["All"] + list(df['League'].unique())
+            selected_league = st.sidebar.selectbox("Filter League", leagues)
+            if selected_league != "All":
+                df = df[df['League'] == selected_league]
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Active Opportunities", total_bets)
-        col2.metric("Average Edge", f"{avg_edge:.2%}")
-        col3.metric("Total Capital at Risk", f"${total_risk:.2f}")
-        col4.metric("Proj. Daily Profit", f"${total_potential_profit:.2f}", delta="If all win")
+        # 3. Metric Sliders
+        min_edge = st.sidebar.slider("Min Edge (%)", 0, 50, 5) / 100.0
+        min_conf = st.sidebar.slider("Min Confidence (%)", 0, 100, 30) / 100.0
+        max_odds = st.sidebar.slider("Max Odds", 1.0, 20.0, 10.0)
 
-        # --- 4. The "God Mode" Table ---
-        st.subheader(f"📋 Actionable Recommendations ({selected_sport})")
+        # Apply Filters
+        filtered_df = df[
+            (df['Edge'] >= min_edge) & 
+            (df['Confidence'] >= min_conf) & 
+            (df['Odds'] <= max_odds)
+        ].copy()
+
+        # --- KPI ROW ---
+        total_bets = len(filtered_df)
+        if total_bets > 0:
+            avg_edge = filtered_df['Edge'].mean()
+            # Calculate dynamic stake based on user bankroll input
+            filtered_df['User_Stake_Cash'] = bankroll * filtered_df['Stake'] * (kelly_multiplier / 0.25)
+            total_risk = filtered_df['User_Stake_Cash'].sum()
+            proj_profit = (filtered_df['User_Stake_Cash'] * (filtered_df['Odds'] - 1)).sum()
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Opportunities", total_bets)
+            c2.metric("Avg Edge", f"{avg_edge:.2%}")
+            c3.metric("Total Risk", f"${total_risk:.2f}")
+            c4.metric("Proj. Profit", f"${proj_profit:.2f}", delta="Daily Potential")
+        else:
+            st.info("No bets match your current filters.")
+
+        # --- THE "GOD MODE" CARD VIEW ---
+        st.subheader(f"📋 Actionable Recommendations")
         
-        for i, row in df.iterrows():
+        for i, row in filtered_df.iterrows():
+            profile = get_risk_profile(row)
+            sport_icon = get_team_emoji(row.get('Sport', 'Soccer'))
+            
+            # Card Container
             with st.container():
-                # Create a card-like layout
-                c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1])
-                
-                sport_icon = get_team_emoji(row.get('Sport', 'Soccer'))
+                # Top Row: Match Info & Key Stats
+                c1, c2, c3, c4, c5 = st.columns([2.5, 1, 1, 1, 1])
                 
                 with c1:
-                    st.markdown(f"**{sport_icon} {row['Match']}**")
-                    st.caption(f"{row.get('League', 'Unknown League')} • {row['Bet']}")
-                    if 'News Alert' in row and pd.notna(row['News Alert']):
-                        st.warning(row['News Alert'])
+                    st.markdown(f"### {sport_icon} {row['Match']}")
+                    st.caption(f"{row.get('League', 'Unknown')} • **{row['Bet']}**")
+                    st.markdown(f"*{profile}*")
                 
                 with c2:
                     st.metric("Odds", f"{row['Odds']:.2f}")
                 
                 with c3:
                     st.metric("Edge", f"{row['Edge']:.2%}")
-                    st.progress(min(float(row['Edge']), 1.0)) # Visual Edge Meter
+                    st.progress(min(float(row['Edge']), 1.0))
                 
                 with c4:
                     st.metric("Confidence", f"{row['Confidence']:.2%}")
                 
                 with c5:
-                    # Dynamic Stake Calculation Display
-                    rec_stake = row['Stake'] * (kelly_multiplier / 0.25)
-                    cash_stake = bankroll * rec_stake
-                    st.metric("Bet Size", f"${cash_stake:.2f}", delta=f"{rec_stake:.2%}")
+                    rec_stake_pct = row['Stake'] * (kelly_multiplier / 0.25)
+                    cash_val = bankroll * rec_stake_pct
+                    st.metric("Bet Size", f"${cash_val:.2f}", delta=f"{rec_stake_pct:.2%}")
+
+                # Deep Dive Expander
+                with st.expander(f"🔍 Deep Dive: {row['Match']}"):
+                    dd1, dd2 = st.columns(2)
+                    with dd1:
+                        st.markdown("**Analysis Breakdown:**")
+                        st.write(f"- **Implied Probability:** {(1/row['Odds']):.2%}")
+                        st.write(f"- **Model Probability:** {row['Confidence']:.2%}")
+                        st.write(f"- **Kelly Criterion:** {row['Stake']:.2%} (Base)")
+                    with dd2:
+                        if 'News Alert' in row and pd.notna(row['News Alert']):
+                            st.error(f"**News Alert:** {row['News Alert']}")
+                        else:
+                            st.success("No critical injury news detected.")
                 
                 st.divider()
 
@@ -142,16 +184,14 @@ def market_map_page():
         df['Implied'] = 1 / df['Odds']
         
         fig = go.Figure()
-        # The "No Value" Line
         fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', name='Fair Value', line=dict(color='gray', dash='dash')))
         
-        # The Bets
         fig.add_trace(go.Scatter(
             x=df['Implied'], 
             y=df['Confidence'],
             mode='markers',
             marker=dict(
-                size=df['Edge']*100 + 10, # Size bubbles by Edge
+                size=df['Edge']*100 + 10, 
                 color=df['Edge'], 
                 colorscale='RdYlGn', 
                 showscale=True,
@@ -180,11 +220,27 @@ def history_page():
     else:
         st.info("No history archived yet.")
 
+def about_page():
+    st.title("📖 About the Co-Pilot")
+    st.markdown("""
+    **v25.0 Fusion Edition**
+    
+    This system runs on a **Portfolio Architecture**:
+    1.  **Soccer Brain:** Elo Rating + Poisson Distribution + Shot Dominance.
+    2.  **NFL Brain:** Yards Per Play + Turnover Differential Regression.
+    3.  **NBA Brain:** Four Factors Efficiency Model.
+    
+    **Key Metrics:**
+    *   **Edge:** The mathematical advantage over the bookmaker.
+    *   **Confidence:** The model's raw probability of winning.
+    *   **Kelly Stake:** The mathematically optimal bet size to maximize growth and minimize ruin.
+    """)
+
 # ==============================================================================
 # NAVIGATION
 # ==============================================================================
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go To", ["Command Center", "Market Map", "History"])
+page = st.sidebar.radio("Go To", ["Command Center", "Market Map", "History", "About"])
 
 if st.sidebar.button("🔄 Force Refresh"):
     st.cache_data.clear()
@@ -193,6 +249,7 @@ if st.sidebar.button("🔄 Force Refresh"):
 if page == "Command Center": dashboard_page()
 elif page == "Market Map": market_map_page()
 elif page == "History": history_page()
+elif page == "About": about_page()
 
 st.sidebar.markdown("---")
 st.sidebar.caption(f"Connected to: `{GITHUB_USERNAME}/{GITHUB_REPO}`")
