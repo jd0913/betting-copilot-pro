@@ -1,6 +1,6 @@
 # app.py
-# The "Definitive Edition" Cockpit v26.0
-# Combines "God Mode" Visuals with "Ultimate" Bet Tracking & Analytics
+# The "US Pro God Mode" Cockpit v32.0
+# Combines Live US Odds/Arb Data with the Premium Visual Interface
 
 import streamlit as st
 import pandas as pd
@@ -12,7 +12,7 @@ import requests
 # CONFIGURATION
 # ==============================================================================
 st.set_page_config(
-    page_title="Betting Co-Pilot Pro",
+    page_title="Betting Co-Pilot US Pro",
     page_icon="🚀",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -54,14 +54,15 @@ def get_team_emoji(sport):
     return "🏅"
 
 def get_risk_profile(row):
-    """Re-calculates the risk profile on the fly for display."""
-    edge = row['Edge']
-    odds = row['Odds']
-    conf = row['Confidence']
+    """Re-calculates the risk profile on the fly."""
+    edge = row.get('Edge', 0)
+    odds = row.get('Odds', 0)
+    conf = row.get('Confidence', 0)
     
+    if row.get('Bet Type') == 'ARBITRAGE': return "💎 RISK FREE PROFIT"
     if odds > 3.5 and edge > 0.15: return "⚡ Rising Star (High Risk/Reward)"
     if conf > 0.60 and edge > 0.05: return "⭐ High Confidence Anchor"
-    if row['Bet'] == 'Draw': return "⚖️ Value Draw"
+    if row.get('Bet') == 'Draw': return "⚖️ Value Draw"
     return "✅ Standard Value"
 
 # ==============================================================================
@@ -69,7 +70,7 @@ def get_risk_profile(row):
 # ==============================================================================
 
 def dashboard_page():
-    st.title("🚀 Live Command Center")
+    st.title("🚀 Live Command Center (US Pro)")
     
     df = load_data(LATEST_URL)
     
@@ -81,29 +82,42 @@ def dashboard_page():
     st.sidebar.header("🔍 Advanced Filters")
     
     if isinstance(df, pd.DataFrame):
-        # 1. Sport Filter
-        sports = ["All"] + list(df['Sport'].unique()) if 'Sport' in df.columns else ["All"]
+        # --- 1. ARBITRAGE SECTION (The "Free Money" Alert) ---
+        if 'Bet Type' in df.columns:
+            arbs = df[df['Bet Type'] == 'ARBITRAGE']
+            if not arbs.empty:
+                st.error(f"🚨 {len(arbs)} ARBITRAGE OPPORTUNITIES DETECTED! GUARANTEED PROFIT.")
+                for i, row in arbs.iterrows():
+                    with st.container():
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.markdown(f"### 💎 {row['Match']}")
+                            st.code(row['Info']) # Shows exactly which books to bet
+                        with c2:
+                            st.metric("Guaranteed Profit", f"{row['Edge']:.2%}")
+                    st.divider()
+
+        # --- 2. STANDARD VALUE BETS ---
+        # Filter out arbs for the main list
+        if 'Bet Type' in df.columns:
+            value_df = df[df['Bet Type'] != 'ARBITRAGE'].copy()
+        else:
+            value_df = df.copy()
+
+        # Sport Filter
+        sports = ["All"] + list(value_df['Sport'].unique()) if 'Sport' in value_df.columns else ["All"]
         selected_sport = st.sidebar.selectbox("Filter Sport", sports)
         if selected_sport != "All":
-            df = df[df['Sport'] == selected_sport]
+            value_df = value_df[value_df['Sport'] == selected_sport]
 
-        # 2. League Filter (Dynamic)
-        if 'League' in df.columns:
-            leagues = ["All"] + list(df['League'].unique())
-            selected_league = st.sidebar.selectbox("Filter League", leagues)
-            if selected_league != "All":
-                df = df[df['League'] == selected_league]
-
-        # 3. Metric Sliders
+        # Metric Sliders
         min_edge = st.sidebar.slider("Min Edge (%)", 0, 50, 5) / 100.0
         min_conf = st.sidebar.slider("Min Confidence (%)", 0, 100, 30) / 100.0
-        max_odds = st.sidebar.slider("Max Odds", 1.0, 20.0, 10.0)
-
+        
         # Apply Filters
-        filtered_df = df[
-            (df['Edge'] >= min_edge) & 
-            (df['Confidence'] >= min_conf) & 
-            (df['Odds'] <= max_odds)
+        filtered_df = value_df[
+            (value_df['Edge'] >= min_edge) & 
+            (value_df['Confidence'] >= min_conf)
         ].copy()
 
         # --- KPI ROW ---
@@ -111,6 +125,9 @@ def dashboard_page():
         if total_bets > 0:
             avg_edge = filtered_df['Edge'].mean()
             # Calculate dynamic stake based on user bankroll input
+            # Note: Backend provides 'Stake' as a decimal (e.g. 0.02 for 2%). 
+            # We multiply by bankroll and the user's chosen multiplier adjustment.
+            # Since backend assumes 0.25 Kelly, we adjust if user wants different.
             filtered_df['User_Stake_Cash'] = bankroll * filtered_df['Stake'] * (kelly_multiplier / 0.25)
             total_risk = filtered_df['User_Stake_Cash'].sum()
             proj_profit = (filtered_df['User_Stake_Cash'] * (filtered_df['Odds'] - 1)).sum()
@@ -126,13 +143,14 @@ def dashboard_page():
         # --- THE "GOD MODE" CARD VIEW ---
         st.subheader(f"📋 Actionable Recommendations")
         
-        # Create a unique key for checkboxes
+        # Create unique keys for bet slip
         if not filtered_df.empty:
             filtered_df['key'] = filtered_df['Match'] + "_" + filtered_df['Bet']
 
         for i, row in filtered_df.iterrows():
             profile = get_risk_profile(row)
             sport_icon = get_team_emoji(row.get('Sport', 'Soccer'))
+            bookie_info = row.get('Info', 'Check Books') # Get the "Best: FanDuel" info
             
             # Card Container
             with st.container():
@@ -142,7 +160,7 @@ def dashboard_page():
                 with c1:
                     st.markdown(f"### {sport_icon} {row['Match']}")
                     st.caption(f"{row.get('League', 'Unknown')} • **{row['Bet']}**")
-                    st.markdown(f"*{profile}*")
+                    st.markdown(f"**{bookie_info}**") # Display the best bookmaker prominently
                 
                 with c2:
                     st.metric("Odds", f"{row['Odds']:.2f}")
@@ -166,7 +184,7 @@ def dashboard_page():
                         st.markdown("**Analysis Breakdown:**")
                         st.write(f"- **Implied Probability:** {(1/row['Odds']):.2%}")
                         st.write(f"- **Model Probability:** {row['Confidence']:.2%}")
-                        st.write(f"- **Kelly Criterion:** {row['Stake']:.2%} (Base)")
+                        st.write(f"- **Risk Profile:** {profile}")
                     with dd2:
                         if 'News Alert' in row and pd.notna(row['News Alert']):
                             st.error(f"**News Alert:** {row['News Alert']}")
@@ -196,6 +214,10 @@ def market_map_page():
     st.title("🗺️ Market Map Visualization")
     df = load_data(LATEST_URL)
     if isinstance(df, pd.DataFrame):
+        # Filter out arbs for the map
+        if 'Bet Type' in df.columns:
+            df = df[df['Bet Type'] != 'ARBITRAGE']
+            
         df['Implied'] = 1 / df['Odds']
         
         fig = go.Figure()
@@ -237,17 +259,12 @@ def bet_tracker_page():
         
         # Display key columns
         display_cols = ['Match', 'Bet', 'Odds', 'Edge', 'Confidence']
+        # Add Info if available
+        if 'Info' in slip_df.columns: display_cols.append('Info')
+            
         st.dataframe(slip_df[display_cols].style.format({
             'Odds': '{:.2f}', 'Edge': '{:.2%}', 'Confidence': '{:.2%}'
         }))
-        
-        # Calculate Total Potential Return
-        # (Assuming $100 unit for display purposes)
-        potential_profit = 0
-        for bet in st.session_state.bet_slip:
-            potential_profit += 100 * (bet['Odds'] - 1)
-            
-        st.metric("Potential Profit (on $100 units)", f"${potential_profit:.2f}")
         
         if st.button("Clear Bet Slip"):
             st.session_state.bet_slip = []
@@ -268,10 +285,10 @@ def history_page():
 def about_page():
     st.title("📖 About the Co-Pilot")
     st.markdown("""
-    **v26.0 Definitive Edition**
+    **v32.0 US Pro God Mode**
     
     This system runs on a **Portfolio Architecture**:
-    1.  **Soccer Brain:** Elo Rating + Poisson Distribution + Shot Dominance.
+    1.  **Soccer Brain:** Elo Rating + Poisson Distribution + Shot Dominance + Genetic Evolution.
     2.  **NFL Brain:** Yards Per Play + Turnover Differential Regression.
     3.  **NBA Brain:** Four Factors Efficiency Model.
     
