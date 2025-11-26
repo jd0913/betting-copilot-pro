@@ -1,6 +1,6 @@
 # app.py
-# The "US Pro God Mode" Cockpit v32.0
-# Combines Live US Odds/Arb Data with the Premium Visual Interface
+# The "US Pro God Mode" Cockpit v32.1
+# Combines Live US Odds/Arb Data with the Premium Visual Interface & Bet Tracking
 
 import streamlit as st
 import pandas as pd
@@ -125,9 +125,6 @@ def dashboard_page():
         if total_bets > 0:
             avg_edge = filtered_df['Edge'].mean()
             # Calculate dynamic stake based on user bankroll input
-            # Note: Backend provides 'Stake' as a decimal (e.g. 0.02 for 2%). 
-            # We multiply by bankroll and the user's chosen multiplier adjustment.
-            # Since backend assumes 0.25 Kelly, we adjust if user wants different.
             filtered_df['User_Stake_Cash'] = bankroll * filtered_df['Stake'] * (kelly_multiplier / 0.25)
             total_risk = filtered_df['User_Stake_Cash'].sum()
             proj_profit = (filtered_df['User_Stake_Cash'] * (filtered_df['Odds'] - 1)).sum()
@@ -150,7 +147,10 @@ def dashboard_page():
         for i, row in filtered_df.iterrows():
             profile = get_risk_profile(row)
             sport_icon = get_team_emoji(row.get('Sport', 'Soccer'))
-            bookie_info = row.get('Info', 'Check Books') # Get the "Best: FanDuel" info
+            
+            # Handle missing info gracefully
+            bookie_info = row.get('Info', 'Check Books')
+            if pd.isna(bookie_info): bookie_info = "Check Books"
             
             # Card Container
             with st.container():
@@ -160,7 +160,7 @@ def dashboard_page():
                 with c1:
                     st.markdown(f"### {sport_icon} {row['Match']}")
                     st.caption(f"{row.get('League', 'Unknown')} • **{row['Bet']}**")
-                    st.markdown(f"**{bookie_info}**") # Display the best bookmaker prominently
+                    st.markdown(f"**{bookie_info}**") 
                 
                 with c2:
                     st.metric("Odds", f"{row['Odds']:.2f}")
@@ -250,6 +250,9 @@ def market_map_page():
 def bet_tracker_page():
     st.title("🎟️ Personal Bet Slip & Tracker")
     
+    # Add Bankroll Input here too for accurate calculation
+    bankroll = st.number_input("Your Bankroll ($)", value=1000, step=100, key="tracker_bankroll")
+    
     if 'bet_slip' not in st.session_state:
         st.session_state.bet_slip = []
         
@@ -259,12 +262,26 @@ def bet_tracker_page():
         
         # Display key columns
         display_cols = ['Match', 'Bet', 'Odds', 'Edge', 'Confidence']
-        # Add Info if available
         if 'Info' in slip_df.columns: display_cols.append('Info')
             
         st.dataframe(slip_df[display_cols].style.format({
             'Odds': '{:.2f}', 'Edge': '{:.2%}', 'Confidence': '{:.2%}'
         }))
+        
+        # Calculate Total Potential Return based on actual bankroll
+        total_stake = 0
+        potential_profit = 0
+        
+        for bet in st.session_state.bet_slip:
+            # Default to 1% stake if not specified, or use the model's recommendation
+            stake_pct = bet.get('Stake', 0.01) 
+            cash_stake = bankroll * stake_pct
+            total_stake += cash_stake
+            potential_profit += cash_stake * (bet['Odds'] - 1)
+            
+        c1, c2 = st.columns(2)
+        c1.metric("Total Stake Required", f"${total_stake:.2f}")
+        c2.metric("Total Potential Profit", f"${potential_profit:.2f}")
         
         if st.button("Clear Bet Slip"):
             st.session_state.bet_slip = []
@@ -285,7 +302,7 @@ def history_page():
 def about_page():
     st.title("📖 About the Co-Pilot")
     st.markdown("""
-    **v32.0 US Pro God Mode**
+    **v32.1 US Pro God Mode**
     
     This system runs on a **Portfolio Architecture**:
     1.  **Soccer Brain:** Elo Rating + Poisson Distribution + Shot Dominance + Genetic Evolution.
