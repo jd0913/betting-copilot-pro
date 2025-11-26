@@ -1,6 +1,6 @@
 # app.py
-# The "Fusion Edition" Cockpit v25.0
-# Combines "God Mode" Visuals with "Ultimate" Analytics & Filtering
+# The "Definitive Edition" Cockpit v26.0
+# Combines "God Mode" Visuals with "Ultimate" Bet Tracking & Analytics
 
 import streamlit as st
 import pandas as pd
@@ -20,7 +20,7 @@ st.set_page_config(
 
 # ------------------------------------------------------------------------------
 # IMPORTANT: CONFIGURE YOUR GITHUB REPOSITORY DETAILS HERE
-# ------------------------------------------------==============================
+# ------------------------------------------------------------------------------
 GITHUB_USERNAME = "jd0913"
 GITHUB_REPO = "betting-copilot-pro"
 # ------------------------------------------------------------------------------
@@ -126,6 +126,10 @@ def dashboard_page():
         # --- THE "GOD MODE" CARD VIEW ---
         st.subheader(f"📋 Actionable Recommendations")
         
+        # Create a unique key for checkboxes
+        if not filtered_df.empty:
+            filtered_df['key'] = filtered_df['Match'] + "_" + filtered_df['Bet']
+
         for i, row in filtered_df.iterrows():
             profile = get_risk_profile(row)
             sport_icon = get_team_emoji(row.get('Sport', 'Soccer'))
@@ -155,8 +159,8 @@ def dashboard_page():
                     cash_val = bankroll * rec_stake_pct
                     st.metric("Bet Size", f"${cash_val:.2f}", delta=f"{rec_stake_pct:.2%}")
 
-                # Deep Dive Expander
-                with st.expander(f"🔍 Deep Dive: {row['Match']}"):
+                # Deep Dive Expander & Bet Slip
+                with st.expander(f"🔍 Deep Dive & Bet Slip: {row['Match']}"):
                     dd1, dd2 = st.columns(2)
                     with dd1:
                         st.markdown("**Analysis Breakdown:**")
@@ -168,6 +172,17 @@ def dashboard_page():
                             st.error(f"**News Alert:** {row['News Alert']}")
                         else:
                             st.success("No critical injury news detected.")
+                        
+                        # --- BET SLIP LOGIC ---
+                        is_in_slip = any(bet['key'] == row['key'] for bet in st.session_state.bet_slip)
+                        if st.checkbox("Add to my personal Bet Slip", value=is_in_slip, key=row['key']):
+                            if not is_in_slip:
+                                st.session_state.bet_slip.append(row.to_dict())
+                                st.rerun()
+                        else:
+                            if is_in_slip:
+                                st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != row['key']]
+                                st.rerun()
                 
                 st.divider()
 
@@ -210,6 +225,36 @@ def market_map_page():
         st.plotly_chart(fig, use_container_width=True)
         st.caption("Bets ABOVE the dotted line are profitable. Larger/Greener bubbles = Better Bets.")
 
+def bet_tracker_page():
+    st.title("🎟️ Personal Bet Slip & Tracker")
+    
+    if 'bet_slip' not in st.session_state:
+        st.session_state.bet_slip = []
+        
+    st.subheader("My Current Bet Slip")
+    if st.session_state.bet_slip:
+        slip_df = pd.DataFrame(st.session_state.bet_slip)
+        
+        # Display key columns
+        display_cols = ['Match', 'Bet', 'Odds', 'Edge', 'Confidence']
+        st.dataframe(slip_df[display_cols].style.format({
+            'Odds': '{:.2f}', 'Edge': '{:.2%}', 'Confidence': '{:.2%}'
+        }))
+        
+        # Calculate Total Potential Return
+        # (Assuming $100 unit for display purposes)
+        potential_profit = 0
+        for bet in st.session_state.bet_slip:
+            potential_profit += 100 * (bet['Odds'] - 1)
+            
+        st.metric("Potential Profit (on $100 units)", f"${potential_profit:.2f}")
+        
+        if st.button("Clear Bet Slip"):
+            st.session_state.bet_slip = []
+            st.rerun()
+    else:
+        st.info("Your bet slip is empty. Select bets from the Command Center to add them.")
+
 def history_page():
     st.title("📜 Performance Archive")
     df = load_data(HISTORY_URL)
@@ -223,7 +268,7 @@ def history_page():
 def about_page():
     st.title("📖 About the Co-Pilot")
     st.markdown("""
-    **v25.0 Fusion Edition**
+    **v26.0 Definitive Edition**
     
     This system runs on a **Portfolio Architecture**:
     1.  **Soccer Brain:** Elo Rating + Poisson Distribution + Shot Dominance.
@@ -240,14 +285,19 @@ def about_page():
 # NAVIGATION
 # ==============================================================================
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go To", ["Command Center", "Market Map", "History", "About"])
+page = st.sidebar.radio("Go To", ["Command Center", "Market Map", "Bet Tracker", "History", "About"])
 
 if st.sidebar.button("🔄 Force Refresh"):
     st.cache_data.clear()
     st.rerun()
 
+# Initialize Session State for Bet Slip
+if 'bet_slip' not in st.session_state:
+    st.session_state.bet_slip = []
+
 if page == "Command Center": dashboard_page()
 elif page == "Market Map": market_map_page()
+elif page == "Bet Tracker": bet_tracker_page()
 elif page == "History": history_page()
 elif page == "About": about_page()
 
