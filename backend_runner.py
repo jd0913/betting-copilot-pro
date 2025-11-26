@@ -1,6 +1,7 @@
 # ==============================================================================
-# backend_runner.py - "The US Pro Ultimate" Engine (v31.1 Fixed)
+# backend_runner.py - "The Unbreakable Engine" (v33.0)
 # Features: Genetic AI, Neural Nets, Live US Odds, Arbitrage, Multi-Sport, Archival
+# Fixes: NFL Team Map Scope Error
 # ==============================================================================
 import pandas as pd
 import numpy as np
@@ -31,11 +32,11 @@ warnings.filterwarnings('ignore')
 # 🔐 API CONFIGURATION
 # ==============================================================================
 API_CONFIG = {
-    # PASTE YOUR NEW, REGENERATED KEYS HERE
+    # PASTE YOUR ODDS API KEY HERE
     "THE_ODDS_API_KEY": "0c5a163c2e9a8c4b6a5d33c56747ecf1", 
     
-    # OPTIONAL: Discord Webhook
-    "DISCORD_WEBHOOK": "PASTE_WEBHOOK_HERE" 
+    # PASTE YOUR DISCORD WEBHOOK HERE
+    "DISCORD_WEBHOOK": "PASTE_YOUR_WEBHOOK_HERE" 
 }
 
 # ==============================================================================
@@ -105,7 +106,7 @@ def evolve_and_train(X, y):
 # 2. LIVE ODDS & ARBITRAGE MODULE
 # ==============================================================================
 def get_live_odds(sport_key):
-    if "PASTE_NEW" in API_CONFIG["THE_ODDS_API_KEY"]: return []
+    if "PASTE_YOUR" in API_CONFIG["THE_ODDS_API_KEY"]: return []
     url = f'https://api.the-odds-api.com/v4/sports/{sport_key}/odds'
     params = {'api_key': API_CONFIG["THE_ODDS_API_KEY"], 'regions': 'us', 'markets': 'h2h,spreads', 'oddsFormat': 'decimal'}
     try:
@@ -283,32 +284,30 @@ def run_soccer_module(brain, historical_df):
     return pd.DataFrame(bets)
 
 # ==============================================================================
-# 4. NFL MODULE (US Pro - Fixed Mapping)
+# 4. NFL MODULE (US Pro - Fixed)
 # ==============================================================================
 def run_nfl_module():
     print("--- Running NFL Module (US Pro) ---")
     bets = []
     odds_data = get_live_odds('americanfootball_nfl')
     
+    # *** FIX: Define team_map at the top level of the function ***
+    team_map = {
+        "Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL", "Baltimore Ravens": "BAL", "Buffalo Bills": "BUF",
+        "Carolina Panthers": "CAR", "Chicago Bears": "CHI", "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE",
+        "Dallas Cowboys": "DAL", "Denver Broncos": "DEN", "Detroit Lions": "DET", "Green Bay Packers": "GB",
+        "Houston Texans": "HOU", "Indianapolis Colts": "IND", "Jacksonville Jaguars": "JAX", "Kansas City Chiefs": "KC",
+        "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC", "Los Angeles Rams": "LA", "Miami Dolphins": "MIA",
+        "Minnesota Vikings": "MIN", "New England Patriots": "NE", "New Orleans Saints": "NO", "New York Giants": "NYG",
+        "New York Jets": "NYJ", "Philadelphia Eagles": "PHI", "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF",
+        "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB", "Tennessee Titans": "TEN", "Washington Commanders": "WAS"
+    }
+    
     try:
         seasons = [2023, 2022, 2021]
         df = nfl.import_pbp_data(years=seasons, downcast=True, cache=False)
         team_stats = df.groupby(['season', 'home_team']).agg({'yards_gained': 'mean', 'turnover_lost': 'mean'}).reset_index()
         ypp_map = team_stats.groupby('home_team')['yards_gained'].mean().to_dict()
-        
-        # *** FIX: Map Full Names to Abbreviations ***
-        # This is crucial for matching The Odds API (Full Name) to nfl_data_py (Abbr)
-        team_map = {
-            "Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL", "Baltimore Ravens": "BAL", "Buffalo Bills": "BUF",
-            "Carolina Panthers": "CAR", "Chicago Bears": "CHI", "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE",
-            "Dallas Cowboys": "DAL", "Denver Broncos": "DEN", "Detroit Lions": "DET", "Green Bay Packers": "GB",
-            "Houston Texans": "HOU", "Indianapolis Colts": "IND", "Jacksonville Jaguars": "JAX", "Kansas City Chiefs": "KC",
-            "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC", "Los Angeles Rams": "LA", "Miami Dolphins": "MIA",
-            "Minnesota Vikings": "MIN", "New England Patriots": "NE", "New Orleans Saints": "NO", "New York Giants": "NYG",
-            "New York Jets": "NYJ", "Philadelphia Eagles": "PHI", "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF",
-            "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB", "Tennessee Titans": "TEN", "Washington Commanders": "WAS"
-        }
-        
     except: ypp_map = {}
     
     for game in odds_data:
@@ -318,7 +317,6 @@ def run_nfl_module():
             continue
             
         # Value Check
-        # Use the mapper to get the abbreviation
         h_abbr = team_map.get(game['home_team'])
         a_abbr = team_map.get(game['away_team'])
         
@@ -337,7 +335,7 @@ def run_nfl_module():
     return pd.DataFrame(bets)
 
 # ==============================================================================
-# 5. NBA MODULE (US Pro - Fuzzy Matching)
+# 5. NBA MODULE (US Pro)
 # ==============================================================================
 def run_nba_module():
     print("--- Running NBA Module (US Pro) ---")
@@ -357,7 +355,6 @@ def run_nba_module():
             bets.append({'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
             continue
             
-        # Value Check with Fuzzy Matching
         model_home = fuzzy_match_team(game['home_team'], team_names)
         model_away = fuzzy_match_team(game['away_team'], team_names)
         
