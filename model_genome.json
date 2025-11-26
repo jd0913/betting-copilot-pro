@@ -1,0 +1,1 @@
+{"generation": 1, "best_score": 1.011507592256023, "xgb_n_estimators": 200, "xgb_max_depth": 3, "xgb_learning_rate": 0.09886921599587051, "rf_n_estimators": 231, "rf_max_depth": 10, "nn_hidden_layer_size": 64, "nn_alpha": 0.0001}
