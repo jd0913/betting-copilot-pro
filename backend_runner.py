@@ -1,7 +1,7 @@
 # ==============================================================================
-# backend_runner.py - "The Unbreakable Engine" (v33.0)
+# backend_runner.py - "The Unbreakable Engine" (v33.1)
 # Features: Genetic AI, Neural Nets, Live US Odds, Arbitrage, Multi-Sport, Archival
-# Fixes: NFL Team Map Scope Error
+# Fixes: NBA Variable Scope Error & NFL Team Mapping
 # ==============================================================================
 import pandas as pd
 import numpy as np
@@ -156,6 +156,7 @@ def find_arbitrage(game, sport_type):
     return 0, None, best_home, best_draw, best_away
 
 def fuzzy_match_team(team_name, team_list):
+    if not team_list: return None
     match, score = process.extractOne(team_name, team_list)
     if score >= 80: return match
     return None
@@ -335,19 +336,25 @@ def run_nfl_module():
     return pd.DataFrame(bets)
 
 # ==============================================================================
-# 5. NBA MODULE (US Pro)
+# 5. NBA MODULE (US Pro - Fixed)
 # ==============================================================================
 def run_nba_module():
     print("--- Running NBA Module (US Pro) ---")
     bets = []
     odds_data = get_live_odds('basketball_nba')
     
+    # *** FIX: Initialize variables BEFORE try block ***
+    team_power = {}
+    team_names = []
+    
     try:
         stats = leaguedashteamstats.LeagueDashTeamStats(season="2023-24", measure_type_detailed_defense="Four Factors").get_data_frames()[0]
         stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15)
         team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict()
         team_names = list(team_power.keys())
-    except: team_power = {}
+    except Exception as e:
+        print(f"NBA Stats Error: {e}")
+        # team_power and team_names remain empty/default
     
     for game in odds_data:
         profit, arb_info, bh, _, ba = find_arbitrage(game, 'NBA')
@@ -355,6 +362,10 @@ def run_nba_module():
             bets.append({'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
             continue
             
+        # Value Check with Fuzzy Matching
+        # *** FIX: Check if team_names is populated before matching ***
+        if not team_names: continue
+
         model_home = fuzzy_match_team(game['home_team'], team_names)
         model_away = fuzzy_match_team(game['away_team'], team_names)
         
