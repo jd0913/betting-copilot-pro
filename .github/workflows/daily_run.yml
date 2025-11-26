@@ -1,12 +1,12 @@
 name: Daily Betting Analysis
 
 on:
-  workflow_dispatch: # Manual run button
+  workflow_dispatch: # Allows you to run it manually
   schedule:
-    - cron: '0 10 * * *' # Runs at 10 AM UTC daily (adjust as needed)
+    - cron: '0 10 * * *' # Runs at 10 AM UTC daily
 
 permissions:
-  contents: write # CRITICAL: Allows the script to save the brain back to the repo
+  contents: write # CRITICAL: Allows the script to save data back to the repo
 
 jobs:
   build-and-analyze:
@@ -32,7 +32,7 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # THE FIX: Add the history and the genome so the AI remembers and evolves
-          git add latest_bets.csv betting_history.csv model_genome.json
+          # *** THE FIX: Use 'git add .' to add ALL new files automatically ***
+          git add .
           git commit -m "Daily AI Update: New Bets + Brain Evolution" || echo "No changes to commit"
           git push
