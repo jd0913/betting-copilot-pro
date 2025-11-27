@@ -1,1 +1,1 @@
-{"generation": 2, "best_score": 1.0081267901243063, "xgb_n_estimators": 200, "xgb_max_depth": 3, "xgb_learning_rate": 0.09886921599587051, "rf_n_estimators": 231, "rf_max_depth": 10, "nn_hidden_layer_size": 72, "nn_alpha": 0.0001}
+{"generation": 5, "best_score": 1.0583986354342756, "xgb_n_estimators": 163, "xgb_max_depth": 3, "xgb_learning_rate": 0.10252898680696854, "rf_n_estimators": 255, "rf_max_depth": 10, "nn_hidden_layer_size": 72, "nn_alpha": 0.0001}
