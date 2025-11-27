@@ -16,3 +16,4 @@ nba_api
 fuzzywuzzy
 python-levenshtein
 textblob
+pybaseball
