@@ -1,6 +1,6 @@
 # ==============================================================================
-# backend_runner.py - "The Universe" Engine (v36.0)
-# Features: Big 5 Soccer + UCL, NFL, NBA, MLB, Genetic AI, Arbitrage
+# backend_runner.py - "The Timekeeper" Engine (v37.0 - Uncompressed)
+# Features: Match Times, W/L/D Settlement, Multi-Sport, Genetic AI, Arbitrage
 # ==============================================================================
 import pandas as pd
 import numpy as np
@@ -32,60 +32,218 @@ warnings.filterwarnings('ignore')
 # 🔐 API CONFIGURATION
 # ==============================================================================
 API_CONFIG = {
-    "THE_ODDS_API_KEY": "0c5a163c2e9a8c4b6a5d33c56747ecf1", 
+    "THE_ODDS_API_KEY": "PASTE_YOUR_KEY_HERE", 
     "DISCORD_WEBHOOK": "PASTE_YOUR_WEBHOOK_HERE" 
 }
 
 # ==============================================================================
-# 1. THE DARWIN MODULE: GENETIC EVOLUTION
+# 1. SETTLEMENT ENGINE (Tracks W/L/D)
+# ==============================================================================
+def settle_bets():
+    """
+    Reads history, checks results, and marks W/L/D.
+    This runs before analysis to grade previous bets.
+    """
+    print("--- ⚖️ Running Settlement Engine ---")
+    history_file = 'betting_history.csv'
+    
+    if not os.path.exists(history_file):
+        print("   > No history file found. Skipping settlement.")
+        return
+
+    df = pd.read_csv(history_file)
+    
+    # Ensure columns exist
+    if 'Result' not in df.columns:
+        df['Result'] = 'Pending'
+    if 'Profit' not in df.columns:
+        df['Profit'] = 0.0
+    
+    # Filter for pending bets
+    pending = df[df['Result'] == 'Pending']
+    
+    if pending.empty:
+        print("   > No pending bets to settle.")
+        return
+
+    print(f"   > Found {len(pending)} pending bets. Checking for results...")
+
+    # Note: In a full production environment, you would need robust scrapers 
+    # for every league to automate this 100%. 
+    # For this script, we will implement a basic check for Soccer using the CSVs.
+    
+    soccer_pending = pending[pending['Sport'] == 'Soccer']
+    if not soccer_pending.empty:
+        try:
+            # Download latest results for EPL (E0) as an example
+            # In a full version, loop through all leagues
+            results = pd.read_csv('https://www.football-data.co.uk/mmz4281/2324/E0.csv', encoding='latin1')
+            
+            for idx, row in soccer_pending.iterrows():
+                # Match format: "Home vs Away"
+                try:
+                    teams = row['Match'].split(' vs ')
+                    home = teams[0]
+                    away = teams[1]
+                    
+                    # Find match in results
+                    match = results[(results['HomeTeam'] == home) & (results['AwayTeam'] == away)].tail(1)
+                    
+                    if not match.empty and pd.notna(match.iloc[0]['FTR']):
+                        result_row = match.iloc[0]
+                        actual_result = result_row['FTR'] # H, D, A
+                        
+                        won = False
+                        if row['Bet'] == 'Home Win' and actual_result == 'H': won = True
+                        elif row['Bet'] == 'Draw' and actual_result == 'D': won = True
+                        elif row['Bet'] == 'Away Win' and actual_result == 'A': won = True
+                        
+                        if won:
+                            df.at[idx, 'Result'] = 'Win'
+                            df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
+                        else:
+                            df.at[idx, 'Result'] = 'Loss'
+                            df.at[idx, 'Profit'] = -row['Stake']
+                except:
+                    continue
+        except Exception as e:
+            print(f"   > Error settling Soccer: {e}")
+    
+    # Save updates
+    df.to_csv(history_file, index=False)
+    print("   > Settlement complete. History updated.")
+
+# ==============================================================================
+# 2. THE DARWIN MODULE: GENETIC EVOLUTION
 # ==============================================================================
 GENOME_FILE = 'model_genome.json'
 
 def load_or_initialize_genome():
     if os.path.exists(GENOME_FILE):
-        with open(GENOME_FILE, 'r') as f: return json.load(f)
-    return {
-        'generation': 0, 'best_score': 10.0,
-        'xgb_n_estimators': 200, 'xgb_max_depth': 3, 'xgb_learning_rate': 0.1,
-        'rf_n_estimators': 200, 'rf_max_depth': 10,
-        'nn_hidden_layer_size': 64, 'nn_alpha': 0.0001
-    }
+        with open(GENOME_FILE, 'r') as f:
+            return json.load(f)
+    else:
+        return {
+            'generation': 0,
+            'best_score': 10.0,
+            'xgb_n_estimators': 200,
+            'xgb_max_depth': 3,
+            'xgb_learning_rate': 0.1,
+            'rf_n_estimators': 200,
+            'rf_max_depth': 10,
+            'nn_hidden_layer_size': 64,
+            'nn_alpha': 0.0001
+        }
 
 def mutate_genome(genome):
     mutant = genome.copy()
     mutation_rate = 0.3
-    if random.random() < mutation_rate: mutant['xgb_n_estimators'] = int(genome['xgb_n_estimators'] * random.uniform(0.8, 1.2))
-    if random.random() < mutation_rate: mutant['xgb_learning_rate'] = genome['xgb_learning_rate'] * random.uniform(0.8, 1.2)
-    if random.random() < mutation_rate: mutant['rf_n_estimators'] = int(genome['rf_n_estimators'] * random.uniform(0.8, 1.2))
-    if random.random() < mutation_rate: mutant['nn_hidden_layer_size'] = int(genome['nn_hidden_layer_size'] * random.uniform(0.8, 1.2))
+    
+    if random.random() < mutation_rate:
+        mutant['xgb_n_estimators'] = int(genome['xgb_n_estimators'] * random.uniform(0.8, 1.2))
+    if random.random() < mutation_rate:
+        mutant['xgb_learning_rate'] = genome['xgb_learning_rate'] * random.uniform(0.8, 1.2)
+    if random.random() < mutation_rate:
+        mutant['rf_n_estimators'] = int(genome['rf_n_estimators'] * random.uniform(0.8, 1.2))
+    if random.random() < mutation_rate:
+        mutant['nn_hidden_layer_size'] = int(genome['nn_hidden_layer_size'] * random.uniform(0.8, 1.2))
+        
     return mutant
 
 def build_ensemble_from_genome(genome):
-    xgb_clf = xgb.XGBClassifier(objective='multi:softprob', eval_metric='mlogloss', use_label_encoder=False, n_estimators=int(genome['xgb_n_estimators']), max_depth=int(genome['xgb_max_depth']), learning_rate=genome['xgb_learning_rate'], random_state=42, n_jobs=-1)
-    rf_clf = RandomForestClassifier(n_estimators=int(genome['rf_n_estimators']), max_depth=int(genome['rf_max_depth']), random_state=42, n_jobs=-1)
-    nn_clf = MLPClassifier(hidden_layer_sizes=(int(genome['nn_hidden_layer_size']), int(genome['nn_hidden_layer_size'] // 2)), alpha=genome['nn_alpha'], activation='relu', solver='adam', max_iter=500, random_state=42)
-    lr_clf = LogisticRegression(multi_class='multinomial', solver='lbfgs', max_iter=1000)
-    return VotingClassifier(estimators=[('xgb', xgb_clf), ('rf', rf_clf), ('nn', nn_clf), ('lr', lr_clf)], voting='soft', n_jobs=-1)
+    xgb_clf = xgb.XGBClassifier(
+        objective='multi:softprob',
+        eval_metric='mlogloss',
+        use_label_encoder=False,
+        n_estimators=int(genome['xgb_n_estimators']),
+        max_depth=int(genome['xgb_max_depth']),
+        learning_rate=genome['xgb_learning_rate'],
+        random_state=42,
+        n_jobs=-1
+    )
+    
+    rf_clf = RandomForestClassifier(
+        n_estimators=int(genome['rf_n_estimators']),
+        max_depth=int(genome['rf_max_depth']),
+        random_state=42,
+        n_jobs=-1
+    )
+    
+    nn_clf = MLPClassifier(
+        hidden_layer_sizes=(int(genome['nn_hidden_layer_size']), int(genome['nn_hidden_layer_size'] // 2)),
+        alpha=genome['nn_alpha'],
+        activation='relu',
+        solver='adam',
+        max_iter=500,
+        random_state=42
+    )
+    
+    lr_clf = LogisticRegression(
+        multi_class='multinomial',
+        solver='lbfgs',
+        max_iter=1000
+    )
+    
+    return VotingClassifier(
+        estimators=[('xgb', xgb_clf), ('rf', rf_clf), ('nn', nn_clf), ('lr', lr_clf)],
+        voting='soft',
+        n_jobs=-1
+    )
 
 def evolve_and_train(X, y):
+    print("   🧬 Initiating Evolutionary Cycle...")
     current_genome = load_or_initialize_genome()
-    final_model = build_ensemble_from_genome(current_genome)
+    mutant_genome = mutate_genome(current_genome)
+    tscv = TimeSeriesSplit(n_splits=3)
+    
+    # Test Champion
+    champ_model = build_ensemble_from_genome(current_genome)
+    champ_scores = cross_val_score(champ_model, X, y, cv=tscv, scoring='neg_log_loss')
+    champ_fitness = -champ_scores.mean()
+    
+    # Test Mutant
+    mutant_model = build_ensemble_from_genome(mutant_genome)
+    mutant_scores = cross_val_score(mutant_model, X, y, cv=tscv, scoring='neg_log_loss')
+    mutant_fitness = -mutant_scores.mean()
+    
+    print(f"      > Champion Fitness: {champ_fitness:.5f}")
+    print(f"      > Mutant Fitness:   {mutant_fitness:.5f}")
+    
+    if mutant_fitness < champ_fitness:
+        print("      > 🚀 EVOLUTION! The Mutant has defeated the Champion.")
+        mutant_genome['best_score'] = mutant_fitness
+        mutant_genome['generation'] = current_genome['generation'] + 1
+        winner_genome = mutant_genome
+        with open(GENOME_FILE, 'w') as f: json.dump(winner_genome, f)
+    else:
+        print("      > 💀 The Mutant failed. The Champion remains.")
+        winner_genome = current_genome
+        
+    final_model = build_ensemble_from_genome(winner_genome)
     calibrated_model = CalibratedClassifierCV(final_model, method='isotonic', cv=3)
     calibrated_model.fit(X, y)
     return calibrated_model
 
 # ==============================================================================
-# 2. LIVE ODDS & ARBITRAGE MODULE
+# 3. LIVE ODDS & ARBITRAGE MODULE
 # ==============================================================================
 def get_live_odds(sport_key):
     if "PASTE_YOUR" in API_CONFIG["THE_ODDS_API_KEY"]: return []
     url = f'https://api.the-odds-api.com/v4/sports/{sport_key}/odds'
-    params = {'api_key': API_CONFIG["THE_ODDS_API_KEY"], 'regions': 'us', 'markets': 'h2h,spreads', 'oddsFormat': 'decimal'}
+    params = {
+        'api_key': API_CONFIG["THE_ODDS_API_KEY"],
+        'regions': 'us',
+        'markets': 'h2h,spreads',
+        'oddsFormat': 'decimal'
+    }
     try:
         response = requests.get(url, params=params)
         if response.status_code == 200: return response.json()
+        print(f"⚠️ Odds API Error: {response.status_code} - {response.text}")
         return []
-    except: return []
+    except Exception as e:
+        print(f"Error fetching odds: {e}")
+        return []
 
 def find_arbitrage(game, sport_type):
     best_home = {'price': 0, 'book': ''}
@@ -131,7 +289,7 @@ def fuzzy_match_team(team_name, team_list):
     return None
 
 # ==============================================================================
-# 3. GLOBAL SOCCER MODULE (Big 5 + UCL)
+# 4. GLOBAL SOCCER MODULE (Big 5 + UCL)
 # ==============================================================================
 def calculate_soccer_features(df):
     teams = pd.concat([df['HomeTeam'], df['AwayTeam']]).unique()
@@ -156,6 +314,7 @@ def calculate_soccer_features(df):
     return df, elo_ratings, volatility_map
 
 def train_league_brain(div_code):
+    """Trains a specific brain for a specific league."""
     seasons = ['2324', '2223', '2122']
     try:
         df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/{div_code}.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
@@ -219,8 +378,10 @@ def run_global_soccer_module():
         
         for game in odds_data:
             profit, arb_info, bh, bd, ba = find_arbitrage(game, 'Soccer')
+            match_time = game.get('commence_time', 'Unknown')
+            
             if profit > 0:
-                bets.append({'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
+                bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
                 continue
             
             if brain and historical_df is not None:
@@ -257,18 +418,11 @@ def run_global_soccer_module():
                     a_vol = brain['volatility'].get(model_away, 0.25)
                     vol_factor = 1.0 - ((h_vol + a_vol)/2 - 0.25)
 
-                    if bh['price'] > 0:
-                        edge = (final_probs['Home Win'] * bh['price']) - 1
-                        if edge > 0.05:
-                            bets.append({'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': bh['price'], 'Edge': edge, 'Confidence': final_probs['Home Win'], 'Stake': (edge/(bh['price']-1))*0.25*vol_factor, 'Info': f"Best: {bh['book']}"})
-                    if bd['price'] > 0:
-                        edge = (final_probs['Draw'] * bd['price']) - 1
-                        if edge > 0.05:
-                            bets.append({'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Draw', 'Odds': bd['price'], 'Edge': edge, 'Confidence': final_probs['Draw'], 'Stake': (edge/(bd['price']-1))*0.25*vol_factor, 'Info': f"Best: {bd['book']}"})
-                    if ba['price'] > 0:
-                        edge = (final_probs['Away Win'] * ba['price']) - 1
-                        if edge > 0.05:
-                            bets.append({'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Away Win', 'Odds': ba['price'], 'Edge': edge, 'Confidence': final_probs['Away Win'], 'Stake': (edge/(ba['price']-1))*0.25*vol_factor, 'Info': f"Best: {ba['book']}"})
+                    for outcome, odds_data in [('Home Win', bh), ('Draw', bd), ('Away Win', ba)]:
+                        if odds_data['price'] > 0:
+                            edge = (final_probs[outcome] * odds_data['price']) - 1
+                            if edge > 0.05:
+                                bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'Moneyline', 'Bet': outcome, 'Odds': odds_data['price'], 'Edge': edge, 'Confidence': final_probs[outcome], 'Stake': (edge/(odds_data['price']-1))*0.25*vol_factor, 'Info': f"Best: {odds_data['book']}"})
 
     return pd.DataFrame(bets)
 
@@ -300,8 +454,10 @@ def run_nfl_module():
     
     for game in odds_data:
         profit, arb_info, bh, _, ba = find_arbitrage(game, 'NFL')
+        match_time = game.get('commence_time', 'Unknown')
+        
         if profit > 0:
-            bets.append({'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
+            bets.append({'Date': match_time, 'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
             continue
             
         h_abbr = team_map.get(game['home_team'])
@@ -316,7 +472,7 @@ def run_nfl_module():
             if bh['price'] > 0:
                 edge = (model_prob_home * bh['price']) - 1
                 if edge > 0.05:
-                    bets.append({'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': bh['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(bh['price']-1))*0.25, 'Info': f"Best: {bh['book']}"})
+                    bets.append({'Date': match_time, 'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': bh['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(bh['price']-1))*0.25, 'Info': f"Best: {bh['book']}"})
 
     return pd.DataFrame(bets)
 
@@ -341,8 +497,10 @@ def run_nba_module():
     
     for game in odds_data:
         profit, arb_info, bh, _, ba = find_arbitrage(game, 'NBA')
+        match_time = game.get('commence_time', 'Unknown')
+        
         if profit > 0:
-            bets.append({'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
+            bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
             continue
             
         if not team_names: continue
@@ -359,12 +517,12 @@ def run_nba_module():
             if bh['price'] > 0:
                 edge = (model_prob_home * bh['price']) - 1
                 if edge > 0.05:
-                    bets.append({'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': bh['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(bh['price']-1))*0.25, 'Info': f"Best: {bh['book']}"})
+                    bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': bh['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(bh['price']-1))*0.25, 'Info': f"Best: {bh['book']}"})
 
     return pd.DataFrame(bets)
 
 # ==============================================================================
-# 6. MLB MODULE (Moneyball)
+# 6. MLB MODULE
 # ==============================================================================
 def run_mlb_module():
     print("--- Running MLB Module (Moneyball) ---")
@@ -373,13 +531,14 @@ def run_mlb_module():
     
     for game in odds_data:
         profit, arb_info, bh, _, ba = find_arbitrage(game, 'MLB')
+        match_time = game.get('commence_time', 'Unknown')
+        
         if profit > 0:
-            bets.append({'Sport': 'MLB', 'League': 'MLB', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
+            bets.append({'Date': match_time, 'Sport': 'MLB', 'League': 'MLB', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
             continue
             
-        # Simple Underdog Value Check for MLB (Placeholder for full Sabermetrics)
         if bh['price'] > 2.10: 
-             bets.append({'Sport': 'MLB', 'League': 'MLB', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': bh['price'], 'Edge': 0.05, 'Confidence': 0.50, 'Stake': 0.01, 'Info': f"Best: {bh['book']}"})
+             bets.append({'Date': match_time, 'Sport': 'MLB', 'League': 'MLB', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': bh['price'], 'Edge': 0.05, 'Confidence': 0.50, 'Stake': 0.01, 'Info': f"Best: {bh['book']}"})
 
     return pd.DataFrame(bets)
 
@@ -389,7 +548,10 @@ def run_mlb_module():
 def run_backend_analysis():
     print("--- Starting Daily Global Backend Analysis (US Pro) ---")
     
-    # 1. Run Modules
+    # Run Settlement First
+    settle_bets()
+    
+    # Run Modules
     soccer_bets = run_global_soccer_module()
     nfl_bets = run_nfl_module()
     nba_bets = run_nba_module()
@@ -397,7 +559,6 @@ def run_backend_analysis():
     
     all_bets = pd.concat([soccer_bets, nfl_bets, nba_bets, mlb_bets], ignore_index=True)
     
-    # 3. Save & Archive
     if not all_bets.empty:
         all_bets['Date_Generated'] = datetime.now().strftime('%Y-%m-%d')
         all_bets.to_csv('latest_bets.csv', index=False)
@@ -421,7 +582,7 @@ def run_backend_analysis():
             except: pass
     else:
         print("\nNo value bets found.")
-        pd.DataFrame(columns=['Date_Generated', 'Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info']).to_csv('latest_bets.csv', index=False)
+        pd.DataFrame(columns=['Date', 'Date_Generated', 'Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info']).to_csv('latest_bets.csv', index=False)
 
 if __name__ == "__main__":
     run_backend_analysis()
