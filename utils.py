@@ -1,11 +1,12 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
+# v45.0 - Enterprise Edition
 
 import streamlit as st
 import pandas as pd
 import requests
 
-# --- CONFIG ---
+# --- CONFIGURATION ---
 # REPLACE WITH YOUR USERNAME
 GITHUB_USERNAME = "jd0913"
 GITHUB_REPO = "betting-copilot-pro"
@@ -36,46 +37,78 @@ def load_data(url):
         return df
     except: return "FILE_NOT_FOUND"
 
-def inject_custom_css(font_choice):
-    fonts = {
-        "Modern (Roboto)": "https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap",
-        "Tech (JetBrains Mono)": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap",
-        "Clean (Inter)": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap",
-        "Futuristic (Orbitron)": "https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap"
-    }
-    font_family = {
-        "Modern (Roboto)": "'Roboto', sans-serif",
-        "Tech (JetBrains Mono)": "'JetBrains Mono', monospace",
-        "Clean (Inter)": "'Inter', sans-serif",
-        "Futuristic (Orbitron)": "'Orbitron', sans-serif"
-    }
-    font_url = fonts[font_choice]
-    family = font_family[font_choice]
-
-    st.markdown(f"""
+def inject_custom_css():
+    """Injects the 'Vegas Dark' design system."""
+    st.markdown("""
     <style>
-        @import url('{font_url}');
-        html, body, [class*="css"] {{ font-family: {family}; }}
-        .gradient-text {{
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        
+        html, body, [class*="css"] {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        /* Gradient Header */
+        .gradient-text {
             background: -webkit-linear-gradient(45deg, #00C9FF, #92FE9D);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            font-weight: bold; font-size: 3em; padding-bottom: 10px;
-        }}
-        .bet-card {{
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            font-size: 3em;
+            padding-bottom: 10px;
+        }
+
+        /* Card Styling */
+        .bet-card {
             background-color: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 10px; padding: 15px; margin-bottom: 10px; transition: transform 0.2s;
-        }}
-        .bet-card:hover {{ transform: scale(1.01); border-color: #00C9FF; }}
-        .badge {{
-            padding: 4px 8px; border-radius: 4px; font-size: 0.8em; font-weight: bold; margin-right: 5px; display: inline-block;
-        }}
-        .badge-green {{ background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
-        .badge-red {{ background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
-        .badge-gray {{ background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }}
-        .badge-blue {{ background-color: #cce5ff; color: #004085; border: 1px solid #b8daff; }}
-        .badge-yellow {{ background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }}
-        div[data-testid="stMetricValue"] {{ font-size: 1.5rem; color: #00C9FF; }}
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: transform 0.2s;
+        }
+        .bet-card:hover {
+            transform: translateY(-2px);
+            border-color: #00C9FF;
+        }
+        
+        /* Odds Box */
+        .odds-box {
+            background-color: #262a3b;
+            color: #00e676;
+            font-weight: 700;
+            font-size: 1.1em;
+            padding: 8px 16px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #00e676;
+        }
+        
+        /* Badges */
+        .badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.7em;
+            font-weight: 800;
+            text-transform: uppercase;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .badge-arb { background: linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%); color: #000; }
+        .badge-high { background-color: #ff4b4b; color: white; }
+        .badge-safe { background-color: #00e676; color: #000; }
+        .badge-std { background-color: #31333F; color: #ccc; border: 1px solid #555; }
+        
+        /* Result Badges */
+        .res-win { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+        .res-loss { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+        .res-push { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+        .res-pending { color: #ffc107; font-weight: bold; font-style: italic; }
+
+        /* Metrics */
+        div[data-testid="stMetricValue"] {
+            font-size: 1.5rem;
+            color: #00C9FF;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -89,15 +122,15 @@ def get_team_emoji(sport):
 def get_risk_badge(row):
     edge = row.get('Edge', 0); odds = row.get('Odds', 0); conf = row.get('Confidence', 0)
     bet_type = row.get('Bet Type', '')
-    if bet_type == 'ARBITRAGE': return '<span class="badge badge-blue">💎 RISK FREE PROFIT</span>'
-    if odds > 3.5 and edge > 0.15: return '<span class="badge badge-red">⚡ RISING STAR</span>'
-    if conf > 0.60 and edge > 0.05: return '<span class="badge badge-green">⭐ ANCHOR BET</span>'
-    if row.get('Bet') == 'Draw': return '<span class="badge badge-gray">⚖️ VALUE DRAW</span>'
-    return '<span class="badge badge-gray">✅ STANDARD VALUE</span>'
+    
+    if bet_type == 'ARBITRAGE': return '<span class="badge badge-arb">💎 ARBITRAGE</span>'
+    if odds > 3.5 and edge > 0.15: return '<span class="badge badge-high">⚡ HIGH RISK</span>'
+    if conf > 0.60 and edge > 0.05: return '<span class="badge badge-safe">⭐ ANCHOR</span>'
+    return '<span class="badge badge-std">VALUE</span>'
 
 def format_result_badge(result):
-    if result == 'Win': return '<span class="badge badge-green">WIN</span>'
-    elif result == 'Loss': return '<span class="badge badge-red">LOSS</span>'
-    elif result == 'Push': return '<span class="badge badge-gray">PUSH</span>'
-    elif result == 'Pending': return '<span class="badge badge-yellow">⏳ PENDING</span>'
-    else: return f'<span class="badge badge-gray">{result}</span>'
+    if result == 'Win': return '<span class="res-win">WIN</span>'
+    elif result == 'Loss': return '<span class="res-loss">LOSS</span>'
+    elif result == 'Push': return '<span class="res-push">PUSH</span>'
+    elif result == 'Pending': return '<span class="res-pending">⏳ PENDING</span>'
+    else: return f'<span>{result}</span>'
