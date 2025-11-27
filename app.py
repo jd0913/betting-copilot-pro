@@ -1,37 +1,113 @@
 # app.py
-# The "Timekeeper" Cockpit v37.0
-# Features: Match Times, Visual W/L/D History, Multi-Sport (Soccer, NFL, NBA, MLB)
+# The "Complete Monolith" Cockpit v40.0
+# Features: God Mode UI, Full Bet Tracker, Market Map, Correct Badge Logic
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import requests
+from datetime import datetime
 
 # ==============================================================================
-# CONFIGURATION
+# CONFIGURATION & SETUP
 # ==============================================================================
 st.set_page_config(
-    page_title="Betting Co-Pilot Pro",
-    page_icon="🚀",
-    layout="wide",
+    page_title="Betting Co-Pilot Pro", 
+    page_icon="🚀", 
+    layout="wide", 
     initial_sidebar_state="expanded"
 )
 
-# ------------------------------------------------------------------------------
-# IMPORTANT: CONFIGURE YOUR GITHUB REPOSITORY DETAILS HERE
-# ------------------------------------------------------------------------------
+# --- GITHUB CONFIG ---
+# REPLACE WITH YOUR ACTUAL USERNAME
 GITHUB_USERNAME = "jd0913"
 GITHUB_REPO = "betting-copilot-pro"
-# ------------------------------------------------------------------------------
 
 LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
 HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/betting_history.csv"
 
 # ==============================================================================
-# HELPER FUNCTIONS
+# 🎨 VISUAL STYLING ENGINE (CSS)
 # ==============================================================================
+def inject_custom_css(font_choice):
+    """Injects CSS to style the app based on the selected font."""
+    
+    fonts = {
+        "Modern (Roboto)": "https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap",
+        "Tech (JetBrains Mono)": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap",
+        "Clean (Inter)": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap",
+        "Futuristic (Orbitron)": "https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap"
+    }
+    
+    font_family = {
+        "Modern (Roboto)": "'Roboto', sans-serif",
+        "Tech (JetBrains Mono)": "'JetBrains Mono', monospace",
+        "Clean (Inter)": "'Inter', sans-serif",
+        "Futuristic (Orbitron)": "'Orbitron', sans-serif"
+    }
 
+    font_url = fonts[font_choice]
+    family = font_family[font_choice]
+
+    st.markdown(f"""
+    <style>
+        @import url('{font_url}');
+        
+        html, body, [class*="css"] {{
+            font-family: {family};
+        }}
+        
+        /* Gradient Header */
+        .gradient-text {{
+            background: -webkit-linear-gradient(45deg, #00C9FF, #92FE9D);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: bold;
+            font-size: 3em;
+            padding-bottom: 10px;
+        }}
+
+        /* Card Styling */
+        .bet-card {{
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            transition: transform 0.2s;
+        }}
+        .bet-card:hover {{
+            transform: scale(1.01);
+            border-color: #00C9FF;
+        }}
+        
+        /* Badges */
+        .badge {{
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-right: 5px;
+            display: inline-block;
+        }}
+        .badge-green {{ background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
+        .badge-red {{ background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
+        .badge-gray {{ background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }}
+        .badge-blue {{ background-color: #cce5ff; color: #004085; border: 1px solid #b8daff; }}
+        .badge-yellow {{ background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }}
+        
+        /* Metrics */
+        div[data-testid="stMetricValue"] {{
+            font-size: 1.5rem;
+            color: #00C9FF;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+
+# ==============================================================================
+# DATA LOGIC
+# ==============================================================================
 @st.cache_data(ttl=600)
 def load_data(url):
     try:
@@ -39,11 +115,16 @@ def load_data(url):
         if response.status_code == 404: return "FILE_NOT_FOUND"
         df = pd.read_csv(url)
         if df.empty: return "NO_BETS_FOUND"
+        for col in ['Edge', 'Confidence', 'Odds', 'Stake', 'Profit']:
+            if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce')
         
-        # Numeric conversion
-        cols = ['Edge', 'Confidence', 'Odds', 'Stake', 'Profit']
-        for c in cols:
-            if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce')
+        # Date Formatting
+        if 'Date' in df.columns:
+            df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce')
+            df['Formatted_Date'] = df['Date_Obj'].dt.strftime('%a, %b %d • %I:%M %p')
+            df['Formatted_Date'] = df['Formatted_Date'].fillna('Time TBD')
+        else:
+            df['Formatted_Date'] = 'Time TBD'
         return df
     except: return "FILE_NOT_FOUND"
 
@@ -54,167 +135,118 @@ def get_team_emoji(sport):
     if sport == "MLB": return "⚾"
     return "🏅"
 
-def get_risk_profile(row):
-    edge = row.get('Edge', 0)
-    odds = row.get('Odds', 0)
-    conf = row.get('Confidence', 0)
+def get_risk_badge(row):
+    edge = row.get('Edge', 0); odds = row.get('Odds', 0); conf = row.get('Confidence', 0)
     bet_type = row.get('Bet Type', '')
     
-    if bet_type == 'ARBITRAGE': return "💎 RISK FREE PROFIT"
-    if odds > 3.5 and edge > 0.15: return "⚡ Rising Star (High Risk)"
-    if conf > 0.60 and edge > 0.05: return "⭐ High Confidence Anchor"
-    if row.get('Bet') == 'Draw': return "⚖️ Value Draw"
-    return "✅ Standard Value"
+    if bet_type == 'ARBITRAGE': return '<span class="badge badge-blue">💎 ARBITRAGE</span>'
+    if odds > 3.5 and edge > 0.15: return '<span class="badge badge-red">⚡ HIGH RISK</span>'
+    if conf > 0.60 and edge > 0.05: return '<span class="badge badge-green">⭐ ANCHOR</span>'
+    return '<span class="badge badge-gray">✅ VALUE</span>'
 
 def format_result_badge(result):
-    """Generates HTML for W/L/D badges."""
-    if result == 'Win':
-        return f'<span style="background-color:#d4edda; color:#155724; padding:4px 10px; border-radius:4px; font-weight:bold; border: 1px solid #c3e6cb;">W</span>'
-    elif result == 'Loss':
-        return f'<span style="background-color:#f8d7da; color:#721c24; padding:4px 12px; border-radius:4px; font-weight:bold; border: 1px solid #f5c6cb;">L</span>'
-    elif result == 'Push' or result == 'Draw':
-        return f'<span style="background-color:#e2e3e5; color:#383d41; padding:4px 12px; border-radius:4px; font-weight:bold; border: 1px solid #d6d8db;">D</span>'
-    elif result == 'Pending':
-        return f'<span style="color:gray; font-style:italic;">Pending</span>'
-    else:
-        return f'<span>{result}</span>'
+    """
+    Correctly formats the result badge.
+    Ensures future games are marked as PENDING, not W/L.
+    """
+    if result == 'Win': return '<span class="badge badge-green">WIN</span>'
+    elif result == 'Loss': return '<span class="badge badge-red">LOSS</span>'
+    elif result == 'Push': return '<span class="badge badge-gray">PUSH</span>'
+    elif result == 'Pending': return '<span class="badge badge-yellow">⏳ PENDING</span>'
+    else: return f'<span class="badge badge-gray">{result}</span>'
 
 # ==============================================================================
-# PAGES
+# PAGE 1: DASHBOARD (COMMAND CENTER)
 # ==============================================================================
-
 def dashboard_page():
-    st.title("🚀 Live Command Center")
+    st.markdown('<p class="gradient-text">🚀 Live Command Center</p>', unsafe_allow_html=True)
     
     df = load_data(LATEST_URL)
     
-    # --- SIDEBAR CONTROLS ---
-    st.sidebar.header("💰 Bankroll Strategy")
-    bankroll = st.sidebar.number_input("Bankroll Size ($)", value=1000, step=100)
-    kelly_multiplier = st.sidebar.slider("Kelly Multiplier", 0.1, 1.0, 0.25, help="Recommended: 0.25 (Quarter Kelly)")
+    # --- Sidebar ---
+    st.sidebar.header("🎨 Appearance")
+    font_choice = st.sidebar.selectbox("Font Style", ["Modern (Roboto)", "Tech (JetBrains Mono)", "Clean (Inter)", "Futuristic (Orbitron)"])
+    inject_custom_css(font_choice)
     
-    st.sidebar.header("🔍 Advanced Filters")
+    st.sidebar.header("💰 Bankroll")
+    bankroll = st.sidebar.number_input("Bankroll ($)", value=1000, step=100)
     
     if isinstance(df, pd.DataFrame):
-        # --- 1. ARBITRAGE SECTION ---
-        if 'Bet Type' in df.columns:
-            arbs = df[df['Bet Type'] == 'ARBITRAGE']
-            if not arbs.empty:
-                st.error(f"🚨 {len(arbs)} ARBITRAGE OPPORTUNITIES DETECTED! GUARANTEED PROFIT.")
-                for i, row in arbs.iterrows():
-                    with st.container():
-                        c1, c2 = st.columns([3, 1])
-                        with c1:
-                            st.markdown(f"### 💎 {row['Match']}")
-                            st.caption(f"{row.get('Date', 'Time Unknown')} • {row.get('League', '')}")
-                            st.code(row.get('Info', 'Check Books'))
-                        with c2:
-                            st.metric("Guaranteed Profit", f"{row['Edge']:.2%}")
-                    st.divider()
-
-        # --- 2. STANDARD VALUE BETS ---
-        if 'Bet Type' in df.columns:
-            value_df = df[df['Bet Type'] != 'ARBITRAGE'].copy()
-        else:
-            value_df = df.copy()
-
         # Filters
-        sports = ["All"] + list(value_df['Sport'].unique()) if 'Sport' in value_df.columns else ["All"]
+        sports = ["All"] + list(df['Sport'].unique()) if 'Sport' in df.columns else ["All"]
         selected_sport = st.sidebar.selectbox("Filter Sport", sports)
-        if selected_sport != "All":
-            value_df = value_df[value_df['Sport'] == selected_sport]
-
-        if 'League' in value_df.columns:
-            leagues = ["All"] + list(value_df['League'].unique())
-            selected_league = st.sidebar.selectbox("Filter League", leagues)
-            if selected_league != "All":
-                value_df = value_df[value_df['League'] == selected_league]
-
-        min_edge = st.sidebar.slider("Min Edge (%)", 0, 50, 5) / 100.0
-        min_conf = st.sidebar.slider("Min Confidence (%)", 0, 100, 30) / 100.0
+        if selected_sport != "All": df = df[df['Sport'] == selected_sport]
         
-        filtered_df = value_df[
-            (value_df['Edge'] >= min_edge) & 
-            (value_df['Confidence'] >= min_conf)
-        ].copy()
-
-        # --- KPI ROW ---
-        total_bets = len(filtered_df)
-        if total_bets > 0:
-            avg_edge = filtered_df['Edge'].mean()
-            filtered_df['User_Stake_Cash'] = bankroll * filtered_df['Stake'] * (kelly_multiplier / 0.25)
-            total_risk = filtered_df['User_Stake_Cash'].sum()
-            proj_profit = (filtered_df['User_Stake_Cash'] * (filtered_df['Odds'] - 1)).sum()
-
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Opportunities", total_bets)
-            c2.metric("Avg Edge", f"{avg_edge:.2%}")
-            c3.metric("Total Risk", f"${total_risk:.2f}")
-            c4.metric("Proj. Profit", f"${proj_profit:.2f}", delta="Daily Potential")
-        else:
-            st.info("No bets match your current filters.")
-
-        # --- THE CARD VIEW ---
-        st.subheader(f"📋 Actionable Recommendations")
+        st.markdown("### 📋 Actionable Recommendations")
         
-        if not filtered_df.empty:
-            filtered_df['key'] = filtered_df['Match'] + "_" + str(filtered_df['Odds']) # Unique key
+        # Create unique keys for bet slip
+        if not df.empty:
+            df['key'] = df['Match'] + "_" + df['Bet']
 
-        for i, row in filtered_df.iterrows():
-            profile = get_risk_profile(row)
+        for i, row in df.iterrows():
+            # Visual Card Logic
             sport_icon = get_team_emoji(row.get('Sport', 'Soccer'))
-            match_time = row.get('Date', 'Time Unknown')
-            bookie_info = row.get('Info', 'Check Books')
-            if pd.isna(bookie_info): bookie_info = "Check Books"
+            match_time = row.get('Formatted_Date', 'Time TBD')
+            risk_badge = get_risk_badge(row)
             
+            # Calculate Stake
+            stake_pct = row.get('Stake', 0.01)
+            cash_stake = bankroll * stake_pct
+            
+            # Render Card
             with st.container():
-                c1, c2, c3, c4, c5 = st.columns([2.5, 1, 1, 1, 1])
-                with c1:
-                    st.markdown(f"### {sport_icon} {row['Match']}")
-                    st.caption(f"🕒 {match_time} • {row.get('League', 'Unknown')} • **{row['Bet']}**")
-                    st.markdown(f"**{bookie_info}**") 
-                with c2: st.metric("Odds", f"{row['Odds']:.2f}")
-                with c3:
-                    st.metric("Edge", f"{row['Edge']:.2%}")
-                    st.progress(min(float(row['Edge']), 1.0))
-                with c4: st.metric("Confidence", f"{row['Confidence']:.2%}")
-                with c5:
-                    rec_stake_pct = row['Stake'] * (kelly_multiplier / 0.25)
-                    cash_val = bankroll * rec_stake_pct
-                    st.metric("Bet Size", f"${cash_val:.2f}", delta=f"{rec_stake_pct:.2%}")
-
-                with st.expander(f"🔍 Deep Dive & Bet Slip: {row['Match']}"):
-                    dd1, dd2 = st.columns(2)
-                    with dd1:
-                        st.markdown("**Analysis Breakdown:**")
-                        st.write(f"- **Implied Probability:** {(1/row['Odds']):.2%}")
-                        st.write(f"- **Model Probability:** {row['Confidence']:.2%}")
-                        st.write(f"- **Risk Profile:** {profile}")
-                    with dd2:
-                        if 'News Alert' in row and pd.notna(row['News Alert']):
-                            st.error(f"**News Alert:** {row['News Alert']}")
-                        else:
-                            st.success("No critical injury news detected.")
-                        
-                        is_in_slip = any(bet['key'] == row['key'] for bet in st.session_state.bet_slip)
-                        if st.checkbox("Add to my personal Bet Slip", value=is_in_slip, key=row['key']):
-                            if not is_in_slip:
-                                st.session_state.bet_slip.append(row.to_dict())
-                                st.rerun()
-                        else:
-                            if is_in_slip:
-                                st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != row['key']]
-                                st.rerun()
-                st.divider()
-
+                st.markdown(f"""
+                <div class="bet-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-size:0.8em; color:#888;">{match_time} • {row.get('League', '')}</div>
+                            <div style="font-size:1.2em; font-weight:bold;">{sport_icon} {row['Match']}</div>
+                            <div style="margin-top:5px;">{risk_badge} <span style="font-weight:bold; color:#00C9FF;">{row['Bet']}</span></div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-size:1.5em; font-weight:bold;">{row['Odds']:.2f}</div>
+                            <div style="font-size:0.8em; color:#888;">Odds</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Metrics Row inside the container logic
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Edge", f"{row['Edge']:.2%}")
+                c2.metric("Confidence", f"{row['Confidence']:.2%}")
+                c3.metric("Bet Size", f"${cash_stake:.2f}", delta=f"{stake_pct:.2%}")
+                
+                # Expander for details
+                with st.expander("🔍 Analysis & Bet Slip"):
+                    st.write(f"**Bookmaker Info:** {row.get('Info', 'Check Books')}")
+                    if 'News Alert' in row and pd.notna(row['News Alert']):
+                        st.error(row['News Alert'])
+                    
+                    # Bet Slip Checkbox
+                    key = row['key']
+                    is_in_slip = any(b['key'] == key for b in st.session_state.bet_slip)
+                    if st.checkbox("Add to Bet Slip", value=is_in_slip, key=key):
+                        if not is_in_slip:
+                            st.session_state.bet_slip.append(row.to_dict())
+                            st.rerun()
+                    else:
+                        if is_in_slip:
+                            st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]
+                            st.rerun()
+                
     elif df == "NO_BETS_FOUND":
-        st.success("✅ System Online. Market Scanned. No Value Found.")
-        st.info("The machine is disciplined. It only recommends bets when the math is in your favor.")
+        st.success("✅ System Online. No value bets found.")
     else:
-        st.error("Connection Error. Check GitHub configuration.")
+        st.error("Connection Error.")
 
+# ==============================================================================
+# PAGE 2: MARKET MAP
+# ==============================================================================
 def market_map_page():
-    st.title("🗺️ Market Map Visualization")
+    st.markdown('<p class="gradient-text">🗺️ Market Map</p>', unsafe_allow_html=True)
+    inject_custom_css("Modern (Roboto)")
+    
     df = load_data(LATEST_URL)
     if isinstance(df, pd.DataFrame):
         if 'Bet Type' in df.columns: df = df[df['Bet Type'] != 'ARBITRAGE']
@@ -227,24 +259,34 @@ def market_map_page():
             marker=dict(size=df['Edge']*100 + 10, color=df['Edge'], colorscale='RdYlGn', showscale=True, colorbar=dict(title="Edge")),
             text=df['Match'] + '<br>' + df['Bet'], hoverinfo='text'
         ))
-        fig.update_layout(title="Market Inefficiency Map", xaxis_title="Bookmaker Implied Probability", yaxis_title="Co-Pilot Calculated Probability", height=600)
+        fig.update_layout(
+            title="Market Inefficiency Map", 
+            xaxis_title="Bookmaker Implied Probability", 
+            yaxis_title="Co-Pilot Calculated Probability", 
+            height=600,
+            template="plotly_dark"
+        )
         st.plotly_chart(fig, use_container_width=True)
     else: st.info("No data loaded.")
 
+# ==============================================================================
+# PAGE 3: BET TRACKER
+# ==============================================================================
 def bet_tracker_page():
-    st.title("🎟️ Personal Bet Slip & Tracker")
-    bankroll = st.number_input("Your Bankroll ($)", value=1000, step=100, key="tracker_bankroll")
+    st.markdown('<p class="gradient-text">🎟️ Personal Bet Slip</p>', unsafe_allow_html=True)
+    inject_custom_css("Modern (Roboto)")
     
-    if 'bet_slip' not in st.session_state: st.session_state.bet_slip = []
+    bankroll = st.number_input("Your Bankroll ($)", value=1000, step=100, key="tracker_bankroll")
     
     if st.session_state.bet_slip:
         slip_df = pd.DataFrame(st.session_state.bet_slip)
-        display_cols = ['Date', 'Match', 'Bet', 'Odds', 'Edge', 'Confidence']
-        # Filter to existing columns
-        display_cols = [c for c in display_cols if c in slip_df.columns]
         
-        st.dataframe(slip_df[display_cols].style.format({'Odds': '{:.2f}', 'Edge': '{:.2%}', 'Confidence': '{:.2%}'}))
+        # Display
+        st.dataframe(slip_df[['Match', 'Bet', 'Odds', 'Edge', 'Confidence']].style.format({
+            'Odds': '{:.2f}', 'Edge': '{:.2%}', 'Confidence': '{:.2%}'
+        }))
         
+        # Totals
         total_stake = 0
         potential_profit = 0
         for bet in st.session_state.bet_slip:
@@ -260,72 +302,65 @@ def bet_tracker_page():
         if st.button("Clear Bet Slip"):
             st.session_state.bet_slip = []
             st.rerun()
-    else: st.info("Your bet slip is empty.")
+    else:
+        st.info("Your bet slip is empty. Add bets from the Command Center.")
 
+# ==============================================================================
+# PAGE 4: HISTORY
+# ==============================================================================
 def history_page():
-    st.title("📜 Performance Archive")
+    st.markdown('<p class="gradient-text">📜 Performance Archive</p>', unsafe_allow_html=True)
+    inject_custom_css("Modern (Roboto)")
+    
     df = load_data(HISTORY_URL)
     
     if isinstance(df, pd.DataFrame):
         if 'Result' not in df.columns:
-            st.info("No results settled yet. Wait for the backend to run tomorrow.")
+            st.info("No results settled yet.")
             st.dataframe(df)
             return
 
-        # Render HTML table for badges
-        st.write("### Recent Results")
-        
-        # Create a display copy
-        display_df = df.copy()
-        
-        # Fill NaN results with 'Pending' for display
-        display_df['Result'] = display_df['Result'].fillna('Pending')
-        display_df['Result Badge'] = display_df['Result'].apply(format_result_badge)
-        
-        # Select columns to show
-        cols = ['Date', 'Sport', 'Match', 'Bet', 'Odds', 'Result Badge', 'Profit']
-        cols = [c for c in cols if c in display_df.columns]
-        
-        # Convert to HTML
-        html = display_df[cols].to_html(escape=False, index=False)
-        st.markdown(html, unsafe_allow_html=True)
-        
-        # --- METRICS CALCULATION (FIXED) ---
-        # Only calculate metrics for bets that are NOT Pending
+        # Metrics (Only for settled bets)
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
-        
         if not settled.empty:
             total_profit = settled['Profit'].sum()
             win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
             
-            st.divider()
-            st.subheader("Performance Metrics (Settled Bets Only)")
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Profit (Units)", f"{total_profit:.2f}")
             c2.metric("Win Rate", f"{win_rate:.1%}")
-            c3.metric("Bets Settled", len(settled))
-        else:
-            st.info("No bets have been settled yet. Performance metrics will appear once games are completed.")
+            c3.metric("Total Bets", len(settled))
+            st.divider()
+
+        # HTML Table with Badges
+        display_df = df.copy()
+        # *** FIX: Ensure NaN results are marked as Pending ***
+        display_df['Result'] = display_df['Result'].fillna('Pending')
+        display_df['Status'] = display_df['Result'].apply(format_result_badge)
+        
+        cols = ['Formatted_Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
+        display_df = display_df.rename(columns={'Formatted_Date': 'Date'})
+        cols = [c for c in cols if c in display_df.columns]
+        
+        st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
         
         st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
         
     else: st.info("No history found.")
 
 def about_page():
-    st.title("📖 About the Co-Pilot")
-    st.markdown("""**v37.0 Timekeeper Edition**\n\nPortfolio Architecture:\n1. Soccer Brain: Elo + Poisson + Shot Dominance + Genetic Evolution.\n2. NFL Brain: YPP + Turnover Diff.\n3. NBA Brain: Four Factors Efficiency.\n4. MLB Brain: Moneyball Underdog Value.""")
+    st.title("📖 About")
+    st.markdown("### Betting Co-Pilot Pro v40.0")
+    st.markdown("Automated quantitative analysis engine running on GitHub Actions.")
 
 # ==============================================================================
 # NAVIGATION
 # ==============================================================================
+if 'bet_slip' not in st.session_state: st.session_state.bet_slip = []
+
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Go To", ["Command Center", "Market Map", "Bet Tracker", "History", "About"])
-
-if st.sidebar.button("🔄 Force Refresh"):
-    st.cache_data.clear()
-    st.rerun()
-
-if 'bet_slip' not in st.session_state: st.session_state.bet_slip = []
+if st.sidebar.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
 
 if page == "Command Center": dashboard_page()
 elif page == "Market Map": market_map_page()
