@@ -277,6 +277,9 @@ def history_page():
         
         # Create a display copy
         display_df = df.copy()
+        
+        # Fill NaN results with 'Pending' for display
+        display_df['Result'] = display_df['Result'].fillna('Pending')
         display_df['Result Badge'] = display_df['Result'].apply(format_result_badge)
         
         # Select columns to show
@@ -287,15 +290,22 @@ def history_page():
         html = display_df[cols].to_html(escape=False, index=False)
         st.markdown(html, unsafe_allow_html=True)
         
-        # Metrics
+        # --- METRICS CALCULATION (FIXED) ---
+        # Only calculate metrics for bets that are NOT Pending
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
+        
         if not settled.empty:
             total_profit = settled['Profit'].sum()
             win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
+            
             st.divider()
-            c1, c2 = st.columns(2)
+            st.subheader("Performance Metrics (Settled Bets Only)")
+            c1, c2, c3 = st.columns(3)
             c1.metric("Total Profit (Units)", f"{total_profit:.2f}")
             c2.metric("Win Rate", f"{win_rate:.1%}")
+            c3.metric("Bets Settled", len(settled))
+        else:
+            st.info("No bets have been settled yet. Performance metrics will appear once games are completed.")
         
         st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
         
