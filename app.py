@@ -1,5 +1,5 @@
 # app.py
-# The "Manager" - Entry point for the Enterprise Architecture
+# The "Manager" - Entry point for v45.0
 
 import streamlit as st
 import utils
@@ -20,16 +20,15 @@ st.set_page_config(
 # ==============================================================================
 if 'bet_slip' not in st.session_state: st.session_state.bet_slip = []
 
+# Inject CSS
+utils.inject_custom_css()
+
 st.sidebar.title("Navigation")
 
 # Global Settings
-st.sidebar.header("🎨 Appearance")
-font_choice = st.sidebar.selectbox("Font Style", ["Modern (Roboto)", "Tech (JetBrains Mono)", "Clean (Inter)", "Futuristic (Orbitron)"])
-utils.inject_custom_css(font_choice)
-
 st.sidebar.header("💰 Bankroll")
 bankroll = st.sidebar.number_input("Bankroll ($)", value=1000, step=100)
-kelly_multiplier = st.sidebar.slider("Kelly Multiplier", 0.1, 1.0, 0.25, help="Recommended: 0.25")
+kelly_multiplier = st.sidebar.slider("Kelly Multiplier", 0.1, 1.0, 0.25)
 
 st.sidebar.markdown("---")
 
