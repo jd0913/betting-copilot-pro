@@ -1,34 +1,69 @@
-Sport,League,Match,Bet Type,Bet,Odds,Edge,Confidence,Stake,Info,Date_Generated
-Soccer,EPL,Brentford vs Burnley,Moneyline,Away Win,7.0,0.6823077595140128,0.2403296799305732,0.0320039424824958,Best: BetRivers,2025-11-26
-Soccer,EPL,Manchester City vs Leeds United,Moneyline,Home Win,1.27,0.1338384777642025,0.892786202963939,0.1478256704733184,Best: LowVig.ag,2025-11-26
-Soccer,EPL,Everton vs Newcastle United,Moneyline,Away Win,2.55,0.1352419923658887,0.4451929381827015,0.0240232381393622,Best: FanDuel,2025-11-26
-Soccer,EPL,Tottenham Hotspur vs Fulham,Moneyline,Home Win,2.14,0.1125688772363082,0.5198919987085552,0.0278044797750845,Best: LowVig.ag,2025-11-26
-Soccer,EPL,Nottingham Forest vs Brighton and Hove Albion,Moneyline,Home Win,2.82,0.2183351097148158,0.4320337268492255,0.0338322377999685,Best: LowVig.ag,2025-11-26
-Soccer,EPL,West Ham United vs Liverpool,Moneyline,Home Win,5.2,0.0881300298641463,0.2092557749738742,0.0056406217163598,Best: BetRivers,2025-11-26
-Soccer,EPL,West Ham United vs Liverpool,Moneyline,Draw,4.38,0.0805742002471412,0.2467064384125893,0.0064081349857207,Best: LowVig.ag,2025-11-26
-Soccer,EPL,Chelsea vs Arsenal,Moneyline,Away Win,2.25,0.1073425676105361,0.4921522522713494,0.024496857940892,Best: BetRivers,2025-11-26
-Soccer,EPL,Bournemouth vs Everton,Moneyline,Away Win,3.9,0.4549438403769854,0.373062523173586,0.0436268162165448,Best: Bovada,2025-11-26
-Soccer,EPL,Fulham vs Manchester City,Moneyline,Away Win,1.64,0.2799123479948366,0.780434358533437,0.1269413727613245,Best: Bovada,2025-11-26
-Soccer,EPL,Newcastle United vs Tottenham Hotspur,Moneyline,Away Win,4.5,0.3125177413639286,0.2916706091919841,0.0254114050424053,Best: BetRivers,2025-11-26
-Soccer,EPL,Arsenal vs Brentford,Moneyline,Draw,5.75,0.1696403795624175,0.2034157181847682,0.0100809585313427,Best: Bovada,2025-11-26
-Soccer,EPL,Arsenal vs Brentford,Moneyline,Away Win,10.5,0.5746479560728837,0.1499664720069413,0.0170743611580995,Best: BetRivers,2025-11-26
-Soccer,EPL,Brighton and Hove Albion vs Aston Villa,Moneyline,Away Win,3.17,0.302351588051696,0.4108364631077905,0.0384696310203498,Best: LowVig.ag,2025-11-26
-Soccer,EPL,Burnley vs Crystal Palace,Moneyline,Draw,3.96,0.1002561227308989,0.2778424552350755,0.0092011714724325,Best: LowVig.ag,2025-11-26
-Soccer,EPL,Leeds United vs Chelsea,Moneyline,Away Win,1.8,0.3524938364950019,0.7513854647194455,0.1270528070224142,Best: Bovada,2025-11-26
-Soccer,EPL,Manchester United vs West Ham United,Moneyline,Away Win,7.0,0.1066414604251047,0.1580916372035863,0.0050099345457865,Best: FanDuel,2025-11-26
-NFL,NFL,Green Bay Packers @ Detroit Lions,Moneyline,Home Win,1.7,0.0625,0.625,0.0223214285714285,Best: DraftKings,2025-11-26
-NFL,NFL,Kansas City Chiefs @ Dallas Cowboys,Moneyline,Home Win,2.54,0.5874999999999999,0.625,0.0953733766233766,Best: DraftKings,2025-11-26
-NFL,NFL,Atlanta Falcons @ New York Jets,Moneyline,Home Win,2.28,0.4249999999999998,0.625,0.0830078124999999,Best: FanDuel,2025-11-26
-NFL,NFL,Los Angeles Rams @ Carolina Panthers,Moneyline,Home Win,6.3,2.9375,0.625,0.138561320754717,Best: FanDuel,2025-11-26
-NFL,NFL,San Francisco 49ers @ Cleveland Browns,Moneyline,Home Win,3.05,0.90625,0.625,0.1105182926829268,Best: Bovada,2025-11-26
-NFL,NFL,Jacksonville Jaguars @ Tennessee Titans,Moneyline,Home Win,3.65,1.28125,0.625,0.1208726415094339,Best: FanDuel,2025-11-26
-NFL,NFL,Buffalo Bills @ Pittsburgh Steelers,Moneyline,Home Win,2.74,0.7125000000000001,0.625,0.1023706896551724,Best: BetOnline.ag,2025-11-26
-NFL,NFL,Denver Broncos @ Washington Commanders,Moneyline,Home Win,3.75,1.34375,0.625,0.1221590909090909,Best: FanDuel,2025-11-26
-NFL,NFL,Seattle Seahawks @ Atlanta Falcons,Moneyline,Home Win,4.8,2.0,0.625,0.131578947368421,Best: FanDuel,2025-11-26
-NFL,NFL,Indianapolis Colts @ Jacksonville Jaguars,Moneyline,Home Win,2.42,0.5125,0.625,0.0902288732394366,Best: FanDuel,2025-11-26
-NFL,NFL,Miami Dolphins @ New York Jets,Moneyline,Home Win,2.3,0.4375,0.625,0.0841346153846153,Best: DraftKings,2025-11-26
-NFL,NFL,Washington Commanders @ Minnesota Vikings,Moneyline,Home Win,1.7,0.0625,0.625,0.0223214285714285,Best: DraftKings,2025-11-26
-NFL,NFL,Denver Broncos @ Las Vegas Raiders,Moneyline,Home Win,4.7,1.9375,0.625,0.1309121621621621,Best: FanDuel,2025-11-26
-NFL,NFL,Los Angeles Rams @ Arizona Cardinals,Moneyline,Home Win,5.2,2.25,0.625,0.1339285714285714,Best: FanDuel,2025-11-26
-NFL,NFL,Philadelphia Eagles @ Los Angeles Chargers,Moneyline,Home Win,2.4,0.5,0.625,0.0892857142857142,Best: FanDuel,2025-11-26
-NBA,NBA,Houston Rockets @ Golden State Warriors,ARBITRAGE,ALL,0.0,0.0002493765586035,1.0,0.0,Home: DraftKings (1.91) | Away: FanDuel (2.1),2025-11-26
+Sport,League,Match,Bet Type,Bet,Odds,Edge,Confidence,Stake,Info,Date_Generated,Result,Profit,Score
+Soccer,EPL,Brentford vs Burnley,Moneyline,Away Win,7.0,0.6823077595140128,0.2403296799305732,0.0320039424824958,Best: BetRivers,2025-11-26,Loss,-0.0320039424824958,3-0
+Soccer,EPL,Manchester City vs Leeds United,Moneyline,Home Win,1.27,0.1338384777642025,0.892786202963939,0.1478256704733184,Best: LowVig.ag,2025-11-26,Pending,0.0,
+Soccer,EPL,Everton vs Newcastle United,Moneyline,Away Win,2.55,0.1352419923658887,0.4451929381827015,0.0240232381393622,Best: FanDuel,2025-11-26,Pending,0.0,
+Soccer,EPL,Tottenham Hotspur vs Fulham,Moneyline,Home Win,2.14,0.1125688772363082,0.5198919987085552,0.0278044797750845,Best: LowVig.ag,2025-11-26,Pending,0.0,
+Soccer,EPL,Nottingham Forest vs Brighton and Hove Albion,Moneyline,Home Win,2.82,0.2183351097148158,0.4320337268492255,0.0338322377999685,Best: LowVig.ag,2025-11-26,Pending,0.0,
+Soccer,EPL,West Ham United vs Liverpool,Moneyline,Home Win,5.2,0.0881300298641463,0.2092557749738742,0.0056406217163598,Best: BetRivers,2025-11-26,Pending,0.0,
+Soccer,EPL,West Ham United vs Liverpool,Moneyline,Draw,4.38,0.0805742002471412,0.2467064384125893,0.0064081349857207,Best: LowVig.ag,2025-11-26,Pending,0.0,
+Soccer,EPL,Chelsea vs Arsenal,Moneyline,Away Win,2.25,0.1073425676105361,0.4921522522713494,0.024496857940892,Best: BetRivers,2025-11-26,Loss,-0.024496857940892,2-2
+Soccer,EPL,Bournemouth vs Everton,Moneyline,Away Win,3.9,0.4549438403769854,0.373062523173586,0.0436268162165448,Best: Bovada,2025-11-26,Loss,-0.0436268162165448,2-1
+Soccer,EPL,Fulham vs Manchester City,Moneyline,Away Win,1.64,0.2799123479948366,0.780434358533437,0.1269413727613245,Best: Bovada,2025-11-26,Pending,0.0,
+Soccer,EPL,Newcastle United vs Tottenham Hotspur,Moneyline,Away Win,4.5,0.3125177413639286,0.2916706091919841,0.0254114050424053,Best: BetRivers,2025-11-26,Pending,0.0,
+Soccer,EPL,Arsenal vs Brentford,Moneyline,Draw,5.75,0.1696403795624175,0.2034157181847682,0.0100809585313427,Best: Bovada,2025-11-26,Loss,-0.0100809585313427,2-1
+Soccer,EPL,Arsenal vs Brentford,Moneyline,Away Win,10.5,0.5746479560728837,0.1499664720069413,0.0170743611580995,Best: BetRivers,2025-11-26,Loss,-0.0170743611580995,2-1
+Soccer,EPL,Brighton and Hove Albion vs Aston Villa,Moneyline,Away Win,3.17,0.302351588051696,0.4108364631077905,0.0384696310203498,Best: LowVig.ag,2025-11-26,Pending,0.0,
+Soccer,EPL,Burnley vs Crystal Palace,Moneyline,Draw,3.96,0.1002561227308989,0.2778424552350755,0.0092011714724325,Best: LowVig.ag,2025-11-26,Loss,-0.0092011714724325,0-2
+Soccer,EPL,Leeds United vs Chelsea,Moneyline,Away Win,1.8,0.3524938364950019,0.7513854647194455,0.1270528070224142,Best: Bovada,2025-11-26,Pending,0.0,
+Soccer,EPL,Manchester United vs West Ham United,Moneyline,Away Win,7.0,0.1066414604251047,0.1580916372035863,0.0050099345457865,Best: FanDuel,2025-11-26,Pending,0.0,
+NFL,NFL,Green Bay Packers @ Detroit Lions,Moneyline,Home Win,1.7,0.0625,0.625,0.0223214285714285,Best: DraftKings,2025-11-26,Pending,0.0,
+NFL,NFL,Kansas City Chiefs @ Dallas Cowboys,Moneyline,Home Win,2.54,0.5874999999999999,0.625,0.0953733766233766,Best: DraftKings,2025-11-26,Pending,0.0,
+NFL,NFL,Atlanta Falcons @ New York Jets,Moneyline,Home Win,2.28,0.4249999999999998,0.625,0.0830078124999999,Best: FanDuel,2025-11-26,Pending,0.0,
+NFL,NFL,Los Angeles Rams @ Carolina Panthers,Moneyline,Home Win,6.3,2.9375,0.625,0.138561320754717,Best: FanDuel,2025-11-26,Pending,0.0,
+NFL,NFL,San Francisco 49ers @ Cleveland Browns,Moneyline,Home Win,3.05,0.90625,0.625,0.1105182926829268,Best: Bovada,2025-11-26,Pending,0.0,
+NFL,NFL,Jacksonville Jaguars @ Tennessee Titans,Moneyline,Home Win,3.65,1.28125,0.625,0.1208726415094339,Best: FanDuel,2025-11-26,Pending,0.0,
+NFL,NFL,Buffalo Bills @ Pittsburgh Steelers,Moneyline,Home Win,2.74,0.7125000000000001,0.625,0.1023706896551724,Best: BetOnline.ag,2025-11-26,Pending,0.0,
+NFL,NFL,Denver Broncos @ Washington Commanders,Moneyline,Home Win,3.75,1.34375,0.625,0.1221590909090909,Best: FanDuel,2025-11-26,Pending,0.0,
+NFL,NFL,Seattle Seahawks @ Atlanta Falcons,Moneyline,Home Win,4.8,2.0,0.625,0.131578947368421,Best: FanDuel,2025-11-26,Pending,0.0,
+NFL,NFL,Indianapolis Colts @ Jacksonville Jaguars,Moneyline,Home Win,2.42,0.5125,0.625,0.0902288732394366,Best: FanDuel,2025-11-26,Pending,0.0,
+NFL,NFL,Miami Dolphins @ New York Jets,Moneyline,Home Win,2.3,0.4375,0.625,0.0841346153846153,Best: DraftKings,2025-11-26,Pending,0.0,
+NFL,NFL,Washington Commanders @ Minnesota Vikings,Moneyline,Home Win,1.7,0.0625,0.625,0.0223214285714285,Best: DraftKings,2025-11-26,Pending,0.0,
+NFL,NFL,Denver Broncos @ Las Vegas Raiders,Moneyline,Home Win,4.7,1.9375,0.625,0.1309121621621621,Best: FanDuel,2025-11-26,Pending,0.0,
+NFL,NFL,Los Angeles Rams @ Arizona Cardinals,Moneyline,Home Win,5.2,2.25,0.625,0.1339285714285714,Best: FanDuel,2025-11-26,Pending,0.0,
+NFL,NFL,Philadelphia Eagles @ Los Angeles Chargers,Moneyline,Home Win,2.4,0.5,0.625,0.0892857142857142,Best: FanDuel,2025-11-26,Pending,0.0,
+NBA,NBA,Houston Rockets @ Golden State Warriors,ARBITRAGE,ALL,0.0,0.0002493765586035,1.0,0.0,Home: DraftKings (1.91) | Away: FanDuel (2.1),2025-11-26,Pending,0.0,
+Soccer,EPL,Brentford vs Burnley,Moneyline,Away Win,7.0,0.7050299883126037,0.24357571261608624,0.016534869257871808,Best: FanDuel,2025-11-27,,,
+Soccer,EPL,Manchester City vs Leeds United,Moneyline,Home Win,1.26,0.12105803588198327,0.8897285999063359,0.06942612292003991,Best: DraftKings,2025-11-27,,,
+Soccer,EPL,Everton vs Newcastle United,Moneyline,Away Win,2.63,0.17164252639449562,0.44549145490285,0.014496360567917664,Best: BetOnline.ag,2025-11-27,,,
+Soccer,EPL,Tottenham Hotspur vs Fulham,Moneyline,Home Win,2.14,0.12337044194885394,0.5249394588546046,0.01523623155096971,Best: LowVig.ag,2025-11-27,,,
+Soccer,EPL,Nottingham Forest vs Brighton and Hove Albion,Moneyline,Home Win,2.82,0.22389174918037336,0.4340041663760189,0.01734663497230306,Best: LowVig.ag,2025-11-27,,,
+Soccer,EPL,West Ham United vs Liverpool,Moneyline,Draw,4.27,0.13413250899185458,0.26560480304258893,0.005513262212674058,Best: LowVig.ag,2025-11-27,,,
+Soccer,EPL,Chelsea vs Arsenal,Moneyline,Away Win,2.22,0.10115596624311918,0.496016201010414,0.011826332738654242,Best: Bovada,2025-11-27,,,
+Soccer,EPL,Bournemouth vs Everton,Moneyline,Away Win,3.9,0.4335184476335836,0.3675688327265599,0.02078611463968834,Best: Bovada,2025-11-27,,,
+Soccer,EPL,Fulham vs Manchester City,Moneyline,Away Win,1.64,0.28948465985487726,0.7862711340578521,0.06564122729591243,Best: Bovada,2025-11-27,,,
+Soccer,EPL,Newcastle United vs Tottenham Hotspur,Moneyline,Away Win,4.5,0.34276234724841115,0.29839163272186914,0.013935325401369825,Best: BetRivers,2025-11-27,,,
+Soccer,EPL,Arsenal vs Brentford,Moneyline,Draw,5.75,0.1946418064716755,0.20776379242985663,0.005783339982402709,Best: Bovada,2025-11-27,,,
+Soccer,EPL,Arsenal vs Brentford,Moneyline,Away Win,10.5,0.5385813339958792,0.14653155561865516,0.008001361627126658,Best: FanDuel,2025-11-27,,,
+Soccer,EPL,Brighton and Hove Albion vs Aston Villa,Moneyline,Away Win,3.3,0.37221760478194477,0.41582351660058936,0.02234110136789381,Best: Bovada,2025-11-27,,,
+Soccer,EPL,Burnley vs Crystal Palace,Moneyline,Draw,3.96,0.08903886356488444,0.27500981403153646,0.0040858444803917,Best: LowVig.ag,2025-11-27,,,
+Soccer,EPL,Leeds United vs Chelsea,Moneyline,Away Win,1.8,0.3728203554564091,0.7626779752535606,0.06718964669968447,Best: Bovada,2025-11-27,,,
+Soccer,EPL,Manchester United vs West Ham United,Moneyline,Away Win,7.0,0.19082971264110338,0.1701185303773005,0.004482517240068321,Best: FanDuel,2025-11-27,,,
+NFL,NFL,Green Bay Packers @ Detroit Lions,Moneyline,Home Win,1.7,0.0625,0.625,0.011160714285714286,Best: DraftKings,2025-11-27,,,
+NFL,NFL,Kansas City Chiefs @ Dallas Cowboys,Moneyline,Home Win,2.6,0.625,0.625,0.048828125,Best: Bovada,2025-11-27,,,
+NFL,NFL,Arizona Cardinals @ Tampa Bay Buccaneers,Moneyline,Home Win,1.74,0.08749999999999991,0.625,0.01478040540540539,Best: DraftKings,2025-11-27,,,
+NFL,NFL,Atlanta Falcons @ New York Jets,Moneyline,Home Win,2.28,0.4249999999999998,0.625,0.041503906249999986,Best: FanDuel,2025-11-27,,,
+NFL,NFL,Los Angeles Rams @ Carolina Panthers,Moneyline,Home Win,6.2,2.875,0.625,0.06911057692307693,Best: FanDuel,2025-11-27,,,
+NFL,NFL,San Francisco 49ers @ Cleveland Browns,Moneyline,Home Win,3.2,1.0,0.625,0.056818181818181816,Best: FanDuel,2025-11-27,,,
+NFL,NFL,Jacksonville Jaguars @ Tennessee Titans,Moneyline,Home Win,3.65,1.28125,0.625,0.060436320754716985,Best: FanDuel,2025-11-27,,,
+NFL,NFL,Buffalo Bills @ Pittsburgh Steelers,Moneyline,Home Win,2.61,0.6312499999999999,0.625,0.04901009316770186,Best: BetOnline.ag,2025-11-27,,,
+NFL,NFL,Denver Broncos @ Washington Commanders,Moneyline,Home Win,3.35,1.09375,0.625,0.0581781914893617,Best: FanDuel,2025-11-27,,,
+NFL,NFL,Seattle Seahawks @ Atlanta Falcons,Moneyline,Home Win,4.8,2.0,0.625,0.06578947368421052,Best: FanDuel,2025-11-27,,,
+NFL,NFL,Indianapolis Colts @ Jacksonville Jaguars,Moneyline,Home Win,2.4,0.5,0.625,0.044642857142857144,Best: FanDuel,2025-11-27,,,
+NFL,NFL,Miami Dolphins @ New York Jets,Moneyline,Home Win,2.3,0.4375,0.625,0.042067307692307696,Best: DraftKings,2025-11-27,,,
+NFL,NFL,Washington Commanders @ Minnesota Vikings,Moneyline,Home Win,1.79,0.11874999999999991,0.625,0.018789556962025302,Best: FanDuel,2025-11-27,,,
+NFL,NFL,Denver Broncos @ Las Vegas Raiders,Moneyline,Home Win,4.7,1.9375,0.625,0.06545608108108107,Best: FanDuel,2025-11-27,,,
+NFL,NFL,Los Angeles Rams @ Arizona Cardinals,Moneyline,Home Win,5.2,2.25,0.625,0.06696428571428571,Best: FanDuel,2025-11-27,,,
+NFL,NFL,Philadelphia Eagles @ Los Angeles Chargers,Moneyline,Home Win,2.34,0.4624999999999999,0.625,0.04314365671641791,Best: FanDuel,2025-11-27,,,
+NBA,NBA,Phoenix Suns @ Sacramento Kings,ARBITRAGE,ALL,0.0,0.022434565849605355,1.0,0.0,Home: BetMGM (23.0) | Away: MyBookie.ag (1.07),2025-11-27,,,
+NBA,NBA,San Antonio Spurs @ Portland Trail Blazers,ARBITRAGE,ALL,0.0,0.06299212598425206,1.0,0.0,Home: BetMGM (5.0) | Away: MyBookie.ag (1.35),2025-11-27,,,
+NBA,NBA,Houston Rockets @ Golden State Warriors,ARBITRAGE,ALL,0.0,0.13211462450592892,1.0,0.0,Home: BetMGM (1.71) | Away: MyBookie.ag (3.35),2025-11-27,,,
