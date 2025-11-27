@@ -5,7 +5,7 @@
 # 🔐 API KEYS (PASTE HERE)
 # ==============================================================================
 API_CONFIG = {
-    "THE_ODDS_API_KEY": "PASTE_YOUR_KEY_HERE", 
+    "THE_ODDS_API_KEY": "0c5a163c2e9a8c4b6a5d33c56747ecf1", 
     "DISCORD_WEBHOOK": "PASTE_YOUR_WEBHOOK_HERE" 
 }
 
