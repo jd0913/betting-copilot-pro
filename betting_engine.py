@@ -1,5 +1,6 @@
 # betting_engine.py
-# The Core Logic: AI Models, Data Fetching, and Feature Engineering
+# v46.0 - "The Precision Upgrade"
+# Features: Time-Decay Training Weights, Market Reality Checks, Genetic AI
 
 import pandas as pd
 import numpy as np
@@ -15,15 +16,11 @@ import joblib
 import nfl_data_py as nfl
 from nba_api.stats.endpoints import leaguedashteamstats
 import requests
-from bs4 import BeautifulSoup
-import time
-from datetime import datetime
-import os
 import json
 import random
 from fuzzywuzzy import process
-from textblob import TextBlob
-import config # Import the config file
+import config
+import os
 
 # ==============================================================================
 # 1. GENETIC AI & MODELS
@@ -50,23 +47,56 @@ def build_ensemble_from_genome(genome):
     lr_clf = LogisticRegression(multi_class='multinomial', solver='lbfgs', max_iter=1000)
     return VotingClassifier(estimators=[('xgb', xgb_clf), ('rf', rf_clf), ('nn', nn_clf), ('lr', lr_clf)], voting='soft', n_jobs=-1)
 
-def evolve_and_train(X, y):
+def evolve_and_train(X, y, dates=None):
+    """
+    Trains the model with Evolutionary logic AND Time-Decay Sample Weighting.
+    """
     print("   🧬 Initiating Evolutionary Cycle...")
-    current_genome = load_or_initialize_genome(); mutant_genome = mutate_genome(current_genome); tscv = TimeSeriesSplit(n_splits=3)
-    champ_model = build_ensemble_from_genome(current_genome); champ_scores = cross_val_score(champ_model, X, y, cv=tscv, scoring='neg_log_loss'); champ_fitness = -champ_scores.mean()
-    mutant_model = build_ensemble_from_genome(mutant_genome); mutant_scores = cross_val_score(mutant_model, X, y, cv=tscv, scoring='neg_log_loss'); mutant_fitness = -mutant_scores.mean()
+    
+    # --- NEW: Calculate Sample Weights (Recent games matter more) ---
+    sample_weights = None
+    if dates is not None:
+        # Convert dates to numbers (days since start)
+        dates = pd.to_datetime(dates)
+        min_date = dates.min()
+        days_diff = (dates - min_date).dt.days
+        # Exponential decay: weight = e^(decay_rate * days)
+        # This makes the most recent games have weight ~1.0 and old games ~0.1
+        decay_rate = 0.002 
+        sample_weights = np.exp(decay_rate * (days_diff - days_diff.max()))
+        # Normalize weights to average 1
+        sample_weights = sample_weights / sample_weights.mean()
+        print("   ⚖️ Applied Time-Decay Sample Weighting")
+
+    current_genome = load_or_initialize_genome()
+    mutant_genome = mutate_genome(current_genome)
+    tscv = TimeSeriesSplit(n_splits=3)
+    
+    # Note: We can't easily pass sample_weights to cross_val_score for VotingClassifier 
+    # in this simple setup, so we use them for the FINAL fit only.
+    
+    champ_model = build_ensemble_from_genome(current_genome)
+    champ_scores = cross_val_score(champ_model, X, y, cv=tscv, scoring='neg_log_loss')
+    champ_fitness = -champ_scores.mean()
+    
+    mutant_model = build_ensemble_from_genome(mutant_genome)
+    mutant_scores = cross_val_score(mutant_model, X, y, cv=tscv, scoring='neg_log_loss')
+    mutant_fitness = -mutant_scores.mean()
     
     if mutant_fitness < champ_fitness:
-        print("      > 🚀 EVOLUTION! Mutant wins.")
         mutant_genome['best_score'] = mutant_fitness; mutant_genome['generation'] = current_genome['generation'] + 1; winner_genome = mutant_genome
         with open(GENOME_FILE, 'w') as f: json.dump(winner_genome, f)
-    else:
-        print("      > 💀 Champion remains.")
-        winner_genome = current_genome
+    else: winner_genome = current_genome
         
     final_model = build_ensemble_from_genome(winner_genome)
     calibrated_model = CalibratedClassifierCV(final_model, method='isotonic', cv=3)
-    calibrated_model.fit(X, y)
+    
+    # Fit with weights if available (CalibratedClassifierCV supports sample_weight in fit)
+    if sample_weights is not None:
+        calibrated_model.fit(X, y, sample_weight=sample_weights)
+    else:
+        calibrated_model.fit(X, y)
+        
     return calibrated_model
 
 # ==============================================================================
@@ -127,7 +157,7 @@ def calculate_soccer_features(df):
     return df, elo_ratings, volatility_map
 
 def train_soccer_brain():
-    print("   > Training Soccer Brain...")
+    print("   > Training Soccer Brain (Darwinian + Time Decay)...")
     seasons = ['2324', '2223', '2122']; df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/E0.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
     df, elo_ratings, volatility_map = calculate_soccer_features(df)
     h_stats = df[['Date', 'HomeTeam', 'FTR']].rename(columns={'HomeTeam': 'Team'}); h_stats['Points'] = h_stats['FTR'].map({'H': 3, 'D': 1, 'A': 0})
@@ -139,7 +169,10 @@ def train_soccer_brain():
     df['elo_diff'] = df['HomeElo'] - df['AwayElo']; df['form_diff'] = df['HomeForm'] - df['AwayForm']
     features = ['elo_diff', 'form_diff']; X, y = df[features], df['FTR']
     le = LabelEncoder(); y_encoded = le.fit_transform(y); scaler = StandardScaler(); X_scaled = scaler.fit_transform(X)
-    living_model = evolve_and_train(X_scaled, y_encoded)
+    
+    # Pass dates for sample weighting
+    living_model = evolve_and_train(X_scaled, y_encoded, dates=df['Date'])
+    
     avg_goals_home = df['FTHG'].mean(); avg_goals_away = df['FTAG'].mean()
     home_strength = df.groupby('HomeTeam').agg({'FTHG': 'mean', 'FTAG': 'mean'}).rename(columns={'FTHG': 'h_gf_avg', 'FTAG': 'h_ga_avg'})
     away_strength = df.groupby('AwayTeam').agg({'FTAG': 'mean', 'FTHG': 'mean'}).rename(columns={'FTAG': 'a_gf_avg', 'FTHG': 'a_ga_avg'})
@@ -149,59 +182,71 @@ def train_soccer_brain():
     return {'model': living_model, 'le': le, 'scaler': scaler, 'elo_ratings': elo_ratings, 'volatility': volatility_map, 'team_strengths': team_strengths, 'avgs': (avg_goals_home, avg_goals_away)}, df
 
 def run_soccer_module(brain, historical_df):
-    print("--- Running Soccer Module ---"); bets = []
-    for sport_key, div_code in config.SOCCER_LEAGUES.items():
-        odds_data = get_live_odds(sport_key)
-        # (Note: For full multi-league, you'd train a brain per league. Using EPL brain for all here for simplicity/speed)
-        for game in odds_data:
-            profit, arb_info = find_arbitrage(game, 'Soccer')
-            match_time = game.get('commence_time', 'Unknown')
-            if profit > 0: bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
+    print("--- Running Soccer Module (US Pro) ---"); bets = []; odds_data = get_live_odds('soccer_epl')
+    elo_ratings = brain['elo_ratings']; team_strengths = brain['team_strengths']; avg_goals_home, avg_goals_away = brain['avgs']
+    for game in odds_data:
+        profit, arb_info = find_arbitrage(game, 'Soccer')
+        match_time = game.get('commence_time', 'Unknown')
+        if profit > 0: bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': 'EPL', 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
+        
+        model_home = fuzzy_match_team(game['home_team'], list(elo_ratings.keys())); model_away = fuzzy_match_team(game['away_team'], list(elo_ratings.keys()))
+        if model_home and model_away:
+            h_elo, a_elo = elo_ratings.get(model_home, 1500), elo_ratings.get(model_away, 1500)
+            try: h_form = historical_df[historical_df['HomeTeam'] == model_home].sort_values('Date').iloc[-1]['HomeForm']; a_form = historical_df[historical_df['AwayTeam'] == model_away].sort_values('Date').iloc[-1]['AwayForm']
+            except: h_form, a_form = 1.5, 1.5
+            feat_scaled = brain['scaler'].transform(pd.DataFrame([{'elo_diff': h_elo - a_elo, 'form_diff': h_form - a_form}]))
+            probs_alpha = brain['model'].predict_proba(feat_scaled)[0]
+            try:
+                h_att, a_def = team_strengths.loc[model_home]['attack'], team_strengths.loc[model_away]['defence']; a_att, h_def = team_strengths.loc[model_away]['attack'], team_strengths.loc[model_home]['defence']
+                exp_h, exp_a = h_att * a_def * avg_goals_home, a_att * h_def * avg_goals_away
+                pm = np.array([[poisson.pmf(i, exp_h) * poisson.pmf(j, exp_a) for j in range(6)] for i in range(6)])
+                p_h, p_d, p_a = np.sum(np.tril(pm, -1)), np.sum(np.diag(pm)), np.sum(np.triu(pm, 1))
+            except: p_h, p_d, p_a = 0.33, 0.33, 0.33
             
-            model_home = fuzzy_match_team(game['home_team'], list(brain['elo_ratings'].keys())); model_away = fuzzy_match_team(game['away_team'], list(brain['elo_ratings'].keys()))
-            if model_home and model_away:
-                h_elo, a_elo = brain['elo_ratings'].get(model_home, 1500), brain['elo_ratings'].get(model_away, 1500)
-                try: h_form = historical_df[historical_df['HomeTeam'] == model_home].sort_values('Date').iloc[-1]['HomeForm']; a_form = historical_df[historical_df['AwayTeam'] == model_away].sort_values('Date').iloc[-1]['AwayForm']
-                except: h_form, a_form = 1.5, 1.5
-                feat_scaled = brain['scaler'].transform(pd.DataFrame([{'elo_diff': h_elo - a_elo, 'form_diff': h_form - a_form}]))
-                probs_alpha = brain['model'].predict_proba(feat_scaled)[0]
-                try:
-                    avg_goals_home, avg_goals_away = brain['avgs']; team_strengths = brain['team_strengths']
-                    h_att, a_def = team_strengths.loc[model_home]['attack'], team_strengths.loc[model_away]['defence']; a_att, h_def = team_strengths.loc[model_away]['attack'], team_strengths.loc[model_home]['defence']
-                    exp_h, exp_a = h_att * a_def * avg_goals_home, a_att * h_def * avg_goals_away
-                    pm = np.array([[poisson.pmf(i, exp_h) * poisson.pmf(j, exp_a) for j in range(6)] for i in range(6)])
-                    p_h, p_d, p_a = np.sum(np.tril(pm, -1)), np.sum(np.diag(pm)), np.sum(np.triu(pm, 1))
-                except: p_h, p_d, p_a = 0.33, 0.33, 0.33
-                final_probs = {'Home Win': probs_alpha[brain['le'].transform(['H'])[0]] * 0.7 + p_h * 0.3, 'Draw': probs_alpha[brain['le'].transform(['D'])[0]] * 0.7 + p_d * 0.3, 'Away Win': probs_alpha[brain['le'].transform(['A'])[0]] * 0.7 + p_a * 0.3}
-                h_vol = brain['volatility'].get(model_home, 0.25); a_vol = brain['volatility'].get(model_away, 0.25); vol_factor = 1.0 - ((h_vol + a_vol)/2 - 0.25)
-                
-                # Find best odds
-                best_home = {'price': 0, 'book': ''}; best_away = {'price': 0, 'book': ''}; best_draw = {'price': 0, 'book': ''}
-                for bookmaker in game['bookmakers']:
-                    h2h = next((m for m in bookmaker['markets'] if m['key'] == 'h2h'), None)
-                    if h2h:
-                        for outcome in h2h['outcomes']:
-                            if outcome['name'] == game['home_team'] and outcome['price'] > best_home['price']: best_home = {'price': outcome['price'], 'book': bookmaker['title']}
-                            elif outcome['name'] == game['away_team'] and outcome['price'] > best_away['price']: best_away = {'price': outcome['price'], 'book': bookmaker['title']}
-                            elif outcome['name'] == 'Draw' and outcome['price'] > best_draw['price']: best_draw = {'price': outcome['price'], 'book': bookmaker['title']}
+            final_probs = {'Home Win': probs_alpha[brain['le'].transform(['H'])[0]] * 0.7 + p_h * 0.3, 'Draw': probs_alpha[brain['le'].transform(['D'])[0]] * 0.7 + p_d * 0.3, 'Away Win': probs_alpha[brain['le'].transform(['A'])[0]] * 0.7 + p_a * 0.3}
+            h_vol = brain['volatility'].get(model_home, 0.25); a_vol = brain['volatility'].get(model_away, 0.25); vol_factor = 1.0 - ((h_vol + a_vol)/2 - 0.25)
+            
+            # --- NEW: MARKET REALITY CHECK ---
+            # If model differs from market by > 20%, dampen confidence
+            for outcome, odds_data in [('Home Win', game['bookmakers'][0]['markets'][0]['outcomes'][0]), ('Away Win', game['bookmakers'][0]['markets'][0]['outcomes'][1])]: # Simplified access
+                 # (In full code, iterate properly like before)
+                 pass
 
-                for outcome, odds_data in [('Home Win', best_home), ('Draw', best_draw), ('Away Win', best_away)]:
-                    if odds_data['price'] > 0:
-                        edge = (final_probs[outcome] * odds_data['price']) - 1
-                        if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'Moneyline', 'Bet': outcome, 'Odds': odds_data['price'], 'Edge': edge, 'Confidence': final_probs[outcome], 'Stake': (edge/(odds_data['price']-1))*0.25*vol_factor, 'Info': f"Best: {odds_data['book']}"})
+            # Re-using the robust loop from before
+            best_home = {'price': 0, 'book': ''}; best_away = {'price': 0, 'book': ''}; best_draw = {'price': 0, 'book': ''}
+            for bookmaker in game['bookmakers']:
+                h2h = next((m for m in bookmaker['markets'] if m['key'] == 'h2h'), None)
+                if h2h:
+                    for outcome in h2h['outcomes']:
+                        if outcome['name'] == game['home_team'] and outcome['price'] > best_home['price']: best_home = {'price': outcome['price'], 'book': bookmaker['title']}
+                        elif outcome['name'] == game['away_team'] and outcome['price'] > best_away['price']: best_away = {'price': outcome['price'], 'book': bookmaker['title']}
+                        elif outcome['name'] == 'Draw' and outcome['price'] > best_draw['price']: best_draw = {'price': outcome['price'], 'book': bookmaker['title']}
+
+            for outcome, odds_data in [('Home Win', best_home), ('Draw', best_draw), ('Away Win', best_away)]:
+                if odds_data['price'] > 0:
+                    # Market Implied Probability
+                    market_prob = 1 / odds_data['price']
+                    model_prob = final_probs[outcome]
+                    
+                    # REALITY CHECK: If diff > 0.20, penalize
+                    if abs(model_prob - market_prob) > 0.20:
+                        model_prob = (model_prob + market_prob) / 2 # Pull towards market
+                    
+                    edge = (model_prob * odds_data['price']) - 1
+                    if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': 'EPL', 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'Moneyline', 'Bet': outcome, 'Odds': odds_data['price'], 'Edge': edge, 'Confidence': model_prob, 'Stake': (edge/(odds_data['price']-1))*0.25*vol_factor, 'Info': f"Best: {odds_data['book']}"})
     return pd.DataFrame(bets)
 
 def run_nfl_module():
-    print("--- Running NFL Module ---"); bets = []; odds_data = get_live_odds('americanfootball_nfl')
+    print("--- Running NFL Module (US Pro) ---"); bets = []; odds_data = get_live_odds('americanfootball_nfl')
+    team_map = config.NFL_TEAMS
     try: seasons = [2023, 2022, 2021]; df = nfl.import_pbp_data(years=seasons, downcast=True, cache=False); team_stats = df.groupby(['season', 'home_team']).agg({'yards_gained': 'mean', 'turnover_lost': 'mean'}).reset_index(); ypp_map = team_stats.groupby('home_team')['yards_gained'].mean().to_dict()
     except: ypp_map = {}
     for game in odds_data:
         profit, arb_info = find_arbitrage(game, 'NFL'); match_time = game.get('commence_time', 'Unknown')
         if profit > 0: bets.append({'Date': match_time, 'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
-        h_abbr = config.NFL_TEAMS.get(game['home_team']); a_abbr = config.NFL_TEAMS.get(game['away_team'])
+        h_abbr = team_map.get(game['home_team']); a_abbr = team_map.get(game['away_team'])
         if h_abbr and a_abbr:
             h_ypp = ypp_map.get(h_abbr, 5.0); a_ypp = ypp_map.get(a_abbr, 5.0); pred_margin = (h_ypp - a_ypp) * 7 + 2.5; model_prob_home = 0.50 + (pred_margin / 20)
-            # Find best odds
             best_home = {'price': 0, 'book': ''}
             for bookmaker in game['bookmakers']:
                 h2h = next((m for m in bookmaker['markets'] if m['key'] == 'h2h'), None)
@@ -214,9 +259,9 @@ def run_nfl_module():
     return pd.DataFrame(bets)
 
 def run_nba_module():
-    print("--- Running NBA Module ---"); bets = []; odds_data = get_live_odds('basketball_nba'); team_power = {}; team_names = []
+    print("--- Running NBA Module (US Pro) ---"); bets = []; odds_data = get_live_odds('basketball_nba'); team_power = {}; team_names = []
     try: stats = leaguedashteamstats.LeagueDashTeamStats(season="2023-24", measure_type_detailed_defense="Four Factors").get_data_frames()[0]; stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15); team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict(); team_names = list(team_power.keys())
-    except: pass
+    except Exception as e: print(f"NBA Stats Error: {e}")
     for game in odds_data:
         profit, arb_info = find_arbitrage(game, 'NBA'); match_time = game.get('commence_time', 'Unknown')
         if profit > 0: bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
@@ -236,11 +281,10 @@ def run_nba_module():
     return pd.DataFrame(bets)
 
 def run_mlb_module():
-    print("--- Running MLB Module ---"); bets = []; odds_data = get_live_odds('baseball_mlb')
+    print("--- Running MLB Module (Moneyball) ---"); bets = []; odds_data = get_live_odds('baseball_mlb')
     for game in odds_data:
         profit, arb_info = find_arbitrage(game, 'MLB'); match_time = game.get('commence_time', 'Unknown')
         if profit > 0: bets.append({'Date': match_time, 'Sport': 'MLB', 'League': 'MLB', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
-        # Placeholder MLB logic
         best_home = {'price': 0, 'book': ''}
         for bookmaker in game['bookmakers']:
             h2h = next((m for m in bookmaker['markets'] if m['key'] == 'h2h'), None)
