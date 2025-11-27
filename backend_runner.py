@@ -50,10 +50,18 @@ def run_backend_analysis():
             all_bets.to_csv(history_file, index=False)
             
         print(f"\nSuccessfully saved {len(all_bets)} recommendations.")
+        
+        # Add News Alerts
+        print("\n--- Scanning for News ---")
+        for i, row in all_bets.head(10).iterrows():
+            if row['Sport'] == 'Soccer':
+                teams = row['Match'].split(' vs ')
+                all_bets.at[i, 'News Alert'] = betting_engine.get_news_alert(teams[0], teams[1])
+        
         send_discord_alert(all_bets)
     else:
         print("\nNo value bets found.")
-        pd.DataFrame(columns=['Date', 'Date_Generated', 'Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info']).to_csv('latest_bets.csv', index=False)
+        pd.DataFrame(columns=['Date', 'Date_Generated', 'Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info', 'News Alert']).to_csv('latest_bets.csv', index=False)
         send_discord_alert(pd.DataFrame())
 
 if __name__ == "__main__":
