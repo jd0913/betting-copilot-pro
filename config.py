@@ -6,7 +6,7 @@
 # ==============================================================================
 API_CONFIG = {
     "THE_ODDS_API_KEY": "0c5a163c2e9a8c4b6a5d33c56747ecf1", 
-    "DISCORD_WEBHOOK": "PASTE_YOUR_DISCORD_WEBHOOK_HERE" 
+    "DISCORD_WEBHOOK": "PASTE_YOUR_WEBHOOK_HERE" 
 }
 
 # ==============================================================================
@@ -31,3 +31,7 @@ NFL_TEAMS = {
     "New York Jets": "NYJ", "Philadelphia Eagles": "PHI", "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF",
     "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB", "Tennessee Titans": "TEN", "Washington Commanders": "WAS"
 }
+
+# GitHub Config for Frontend
+GITHUB_USERNAME = "jd0913"
+GITHUB_REPO = "betting-copilot-pro"
