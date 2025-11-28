@@ -1,5 +1,5 @@
 # app.py
-# The "Manager" - Entry point for v45.0
+# The "Manager" - Entry point for v50.0
 
 import streamlit as st
 import utils
