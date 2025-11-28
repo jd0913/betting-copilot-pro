@@ -1,6 +1,6 @@
 # app.py
-# The "Performance Analyst" Cockpit v43.0
-# Features: Detailed Accuracy Metrics, Win Rate by Sport, Visual History
+# The "True Final Monolith" Cockpit v44.0
+# CONTAINS: God Mode UI + Accuracy Report + Parlay Builder + Bet Tracker + Market Map
 
 import streamlit as st
 import pandas as pd
@@ -232,8 +232,8 @@ def dashboard_page(bankroll, kelly_multiplier):
                             if is_in_slip:
                                 st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]
                                 st.rerun()
-
-        # --- SMART PARLAY BUILDER ---
+        
+        # --- SMART PARLAY BUILDER (RESTORED) ---
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
         if len(df) >= 2:
@@ -319,7 +319,7 @@ def bet_tracker_page(bankroll):
     else: st.info("Your bet slip is empty.")
 
 # ==============================================================================
-# PAGE 4: HISTORY (UPDATED WITH ACCURACY METRICS)
+# PAGE 4: HISTORY (WITH ACCURACY REPORT)
 # ==============================================================================
 def history_page():
     st.markdown('<p class="gradient-text">📜 Performance Archive</p>', unsafe_allow_html=True)
@@ -332,12 +332,9 @@ def history_page():
             return
 
         # --- ACCURACY REPORT ---
-        # Filter for settled bets only (Win/Loss)
         settled = df[df['Result'].isin(['Win', 'Loss'])]
-        
         if not settled.empty:
             total_profit = settled['Profit'].sum()
-            # Accuracy = Wins / (Wins + Losses)
             wins = len(settled[settled['Result'] == 'Win'])
             total_settled = len(settled)
             accuracy = wins / total_settled
@@ -345,7 +342,7 @@ def history_page():
             st.markdown("### 🏆 Accuracy Report")
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Profit", f"{total_profit:.2f}u")
-            c2.metric("Model Accuracy", f"{accuracy:.1%}", help="Percentage of settled bets that were winners.")
+            c2.metric("Model Accuracy", f"{accuracy:.1%}", help="Win Rate")
             c3.metric("Total Bets Settled", total_settled)
             
             # Breakdown by Sport
@@ -359,7 +356,6 @@ def history_page():
                     })
                 )
                 st.dataframe(sport_stats.style.format({'Accuracy': '{:.1%}', 'Profit': '{:.2f}', 'Count': '{:.0f}'}))
-
             st.divider()
 
         # HTML Table with Badges
@@ -379,7 +375,7 @@ def history_page():
 
 def about_page():
     st.title("📖 About")
-    st.markdown("### Betting Co-Pilot Pro v43.0")
+    st.markdown("### Betting Co-Pilot Pro v44.0")
     st.markdown("Automated quantitative analysis engine running on GitHub Actions.")
 
 # ==============================================================================
