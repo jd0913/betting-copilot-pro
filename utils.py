@@ -1,104 +1,222 @@
-# utils.py — v67.0 FINAL
+# utils.py
+# Shared functions for data loading, styling, performance, and UI helpers
+# v68.0 — Fully fixed, robust, with live performance metrics
+
 import streamlit as st
 import pandas as pd
 import requests
-import hashlib
+from datetime import datetime
 
+# ==============================================================================
+# CONFIGURATION
+# ==============================================================================
 GITHUB_USERNAME = "jd0913"
 GITHUB_REPO = "betting-copilot-pro"
+
 LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
 HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/betting_history.csv"
 
-def _load_csv_safely(url):
+# ==============================================================================
+# 1. DATA LOADING (Robust + Caching)
+# ==============================================================================
+@st.cache_data(ttl=300, show_spinner=False)  # 5-minute cache
+def load_data(url):
     try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 404:
+            return "FILE_NOT_FOUND"
+        if response.status_code != 200:
+            return "CONNECTION_ERROR"
+        
         df = pd.read_csv(url)
+        
         if df.empty:
-            return pd.DataFrame()
+            return "NO_BETS_FOUND"
+
+        # Safe numeric conversion
         numeric_cols = ['Edge', 'Confidence', 'Odds', 'Stake', 'Profit']
         for col in numeric_cols:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+        # Date formatting
         if 'Date' in df.columns:
-            df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce')
-            df['Formatted_Date'] = df['Date_Obj'].dt.strftime('%a, %b %d • %I:%M %p').fillna('Time TBD')
+            df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce', utc=True)
+            df['Formatted_Date'] = df['Date_Obj'].dt.strftime('%a, %b %d • %I:%M %p')
+            df['Formatted_Date'] = df['Formatted_Date'].fillna('Time TBD')
         else:
             df['Formatted_Date'] = 'Time TBD'
+
         return df
-    except:
-        return pd.DataFrame()
 
-@st.cache_data(ttl=600, show_spinner="Updating live odds...")
-def get_latest_bets():
-    return _load_csv_safely(LATEST_URL)
+    except Exception as e:
+        st.error(f"Data load failed: {str(e)}")
+        return "CONNECTION_ERROR"
 
-@st.cache_data(ttl=600, show_spinner="Loading history...")
-def get_history():
-    df = _load_csv_safely(HISTORY_URL)
-    if not df.empty:
-        df['Profit'] = df['Profit'].fillna(0.0)
-        df['Stake'] = df['Stake'].fillna(1.0)
-    return df
+# Force-clear cache (used by refresh button in app.py)
+def clear_cache():
+    load_data.clear()
 
+# ==============================================================================
+# 2. PERFORMANCE METRICS (Win Rate, ROI, etc.)
+# ==============================================================================
 def get_performance_stats(history_df):
-    if history_df.empty or 'Result' not in history_df.columns:
-        return {"win_rate": 0.0, "roi": 0.0, "total_bets": 0, "profit": 0.0, "sport_stats": {}}
+    if not isinstance(history_df, pd.DataFrame) or history_df.empty:
+        return {
+            "win_rate": 0.0,
+            "roi": 0.0,
+            "total_bets": 0,
+            "total_profit": 0.0,
+            "total_staked": 0.0,
+            "sport_stats": {}
+        }
+
+    # Only settled bets
     settled = history_df[history_df['Result'].isin(['Win', 'Loss'])].copy()
     if settled.empty:
-        return {"win_rate": 0.0, "roi": 0.0, "total_bets": 0, "profit": 0.0, "sport_stats": {}}
-    
+        return {
+            "win_rate": 0.0,
+            "roi": 0.0,
+            "total_bets": 0,
+            "total_profit": 0.0,
+            "total_staked": 0.0,
+            "sport_stats": {}
+        }
+
     wins = len(settled[settled['Result'] == 'Win'])
     total = len(settled)
     profit = settled['Profit'].sum()
-    total_staked = settled['Stake'].sum()
-    if total_staked == 0:
-        total_staked = total
-    
+    staked = settled['Stake'].sum()
+
     win_rate = wins / total if total > 0 else 0.0
-    roi = profit / total_staked if total_staked > 0 else 0.0
-    
+    roi = (profit / staked) if staked > 0 else 0.0
+
+    # Per-sport breakdown
     sport_stats = {}
     if 'Sport' in settled.columns:
         for sport in settled['Sport'].unique():
             s = settled[settled['Sport'] == sport]
-            sport_stats[sport] = len(s[s['Result'] == 'Win']) / len(s) if len(s) > 0 else 0.0
-    
+            if len(s) > 0:
+                sport_stats[sport] = {
+                    "win_rate": len(s[s['Result'] == 'Win']) / len(s),
+                    "profit": s['Profit'].sum(),
+                    "bets": len(s)
+                }
+
     return {
-        "win_rate": round(win_rate, 3),
-        "roi": round(roi, 4),
+        "win_rate": win_rate,
+        "roi": roi,
         "total_bets": total,
-        "profit": round(profit, 2),
+        "total_profit": profit,
+        "total_staked": staked,
         "sport_stats": sport_stats
     }
 
+# ==============================================================================
+# 3. UI HELPERS & STYLING
+# ==============================================================================
 def inject_custom_css():
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
         html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-        .gradient-text { background: linear-gradient(90deg, #00C9FF, #92FE9D); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; font-size: 3.2em; }
-        .bet-card, .bet-ticket { background: rgba(30, 33, 48, 0.8); border-radius: 12px; padding: 16px; margin: 10px 0; border: 1px solid rgba(255,255,255,0.1); }
-        .odds-box { background: linear-gradient(90deg, #00e676, #00c853); color: black; font-weight: 800; padding: 12px 24px; border-radius: 10px; font-size: 1.5em; }
-        .badge-arb { background: linear-gradient(90deg, #00C9FF, #92FE9D); color: black; padding: 6px 12px; border-radius: 8px; font-weight: bold; }
-        .badge-high { background: #ff1744; color: white; padding: 6px 12px; border-radius: 8px; }
-        .badge-safe { background: #00e676; color: black; padding: 6px 12px; border-radius: 8px; }
+        
+        .gradient-text {
+            background: -webkit-linear-gradient(45deg, #00C9FF, #92FE9D);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            font-size: 3em;
+            padding-bottom: 10px;
+            text-align: center;
+        }
+        
+        .bet-card {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: all 0.2s;
+        }
+        .bet-card:hover {
+            transform: translateY(-2px);
+            border-color: #00C9FF;
+            box-shadow: 0 4px 12px rgba(0, 201, 255, 0.15);
+        }
+        
+        .odds-box {
+            background-color: #262a3b;
+            color: #00e676;
+            font-weight: 700;
+            font-size: 1.2em;
+            padding: 8px 16px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #00e676;
+        }
+        
+        .badge {
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 0.75em;
+            font-weight: 800;
+            text-transform: uppercase;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .badge-arb { background: linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%); color: #000; }
+        .badge-high { background-color: #ff4b4b; color: white; }
+        .badge-safe { background-color: #00e676; color: #000; }
+        .badge-std { background-color: #31333F; color: #ccc; border: 1px solid #555; }
+        
+        .res-win { background-color: #d4edda; color: #155724; padding: 4px 10px; border-radius: 6px; font-weight: bold; }
+        .res-loss { background-color: #f8d7da; color: #721c24; padding: 4px 10px; border-radius: 6px; font-weight: bold; }
+        .res-push { background-color: #e2e3e5; color: #383d41; padding: 4px 10px; border-radius: 6px; font-weight: bold; }
+        .res-pending { color: #ffc107; font-weight: bold; font-style: italic; background: rgba(255,193,7,0.2); padding: 4px 8px; border-radius: 6px; }
+        
+        div[data-testid="stMetricValue"] { font-size: 1.8rem !important; color: #00C9FF; }
+        .stButton>button { background: linear-gradient(45deg, #00C9FF, #92FE9D); border: none; color: black; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
 def get_team_emoji(sport):
-    return {"Soccer": "Soccer", "NFL": "Football", "NBA": "Basketball", "MLB": "Baseball"}.get(sport, "Trophy")
+    emojis = {
+        "Soccer": "⚽",
+        "NFL": "NFL",
+        "NBA": "NBA",
+        "MLB": "MLB",
+        "Tennis": "Tennis",
+        "Cricket": "Cricket"
+    }
+    return emojis.get(sport, "Sports")
 
 def get_risk_badge(row):
-    if row.get('Bet Type') == 'ARBITRAGE':
-        return '<span class="badge-arb">ARBITRAGE</span>'
-    if row.get('Odds', 0) > 3.5 and row.get('Edge', 0) > 0.15:
-        return '<span class="badge-high">HIGH RISK</span>'
-    if row.get('Confidence', 0) > 0.60 and row.get('Edge', 0) > 0.05:
-        return '<span class="badge-safe">ANCHOR</span>'
-    return '<span style="background:#31333F;color:#ccc;padding:6px 12px;border-radius:8px;">VALUE</span>'
+    if pd.isna(row.get('Edge')) or pd.isna(row.get('Odds')):
+        return '<span class="badge badge-std">VALUE</span>'
+    
+    edge = row['Edge']
+    odds = row['Odds']
+    conf = row.get('Confidence', 0.5)
+    bet_type = row.get('Bet Type', '')
+
+    if bet_type == 'ARBITRAGE':
+        return '<span class="badge badge-arb">Arbitrage</span>'
+    if odds > 3.5 and edge > 0.15:
+        return '<span class="badge badge-high">High Risk</span>'
+    if conf > 0.65 and edge > 0.08:
+        return '<span class="badge badge-safe">Anchor</span>'
+    return '<span class="badge badge-std">Value</span>'
 
 def format_result_badge(result):
-    if result == 'Win': return '<span style="background:#c8e6c9;color:#1b5e20;padding:4px 10px;border-radius:6px;font-weight:bold;">WIN</span>'
-    elif result == 'Loss': return '<span style="background:#ffcdd2;color:#c62828;padding:4px 10px;border-radius:6px;font-weight:bold;">LOSS</span>'
-    elif result == 'Push': return '<span style="background:#e0e0e0;color:#424242;padding:4px 10px;border-radius:6px;">PUSH</span>'
-    elif result == 'Pending': return '<span style="color:#ff9800;font-weight:bold;">PENDING</span>'
-    else: return f'<span>{result}</span>'
+    if pd.isna(result):
+        return '<span class="res-pending">Pending</span>'
+    result = str(result).strip()
+    if result == 'Win':
+        return '<span class="res-win">WIN</span>'
+    elif result == 'Loss':
+        return '<span class="res-loss">LOSS</span>'
+    elif result == 'Push':
+        return '<span class="res-push">PUSH</span>'
+    else:
+        return '<span class="res-pending">Pending</span>'
