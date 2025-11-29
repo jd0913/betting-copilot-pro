@@ -1,6 +1,6 @@
 # app.py
-# The "Manager" - Entry point for v57.0
-# Updates: Hidden Kelly Multiplier (Fixed to 0.25)
+# The "Manager" - Entry point for v58.0
+# Fixes: Bankroll now accepts decimals (e.g. 1000.50)
 
 import streamlit as st
 import utils
@@ -28,9 +28,17 @@ st.sidebar.title("Navigation")
 
 # Global Settings
 st.sidebar.header("💰 Bankroll")
-bankroll = st.sidebar.number_input("Bankroll ($)", value=1000, step=100)
 
-# *** FIX: Hardcoded Professional Standard (Hidden from User) ***
+# *** FIX: Explicitly use float (1000.0), step=0.01, and format="%.2f" ***
+bankroll = st.sidebar.number_input(
+    "Bankroll ($)", 
+    value=1000.0, 
+    min_value=0.0, 
+    step=0.01, 
+    format="%.2f"
+)
+
+# Hardcoded Professional Standard (Quarter Kelly) - Hidden from user
 kelly_multiplier = 0.25 
 
 st.sidebar.markdown("---")
