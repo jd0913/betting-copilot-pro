@@ -1,6 +1,6 @@
 # views.py
-# The "Vegas Edition" Layouts (v48.0)
-# Fixes: History Table Columns & Profit Display
+# The "Vegas Edition" Layouts (v49.0)
+# Fixes: ZeroDivisionError in Deep Dive, Date Display
 
 import streamlit as st
 import pandas as pd
@@ -14,13 +14,15 @@ def render_dashboard(bankroll, kelly_multiplier):
     df = utils.load_data(utils.LATEST_URL)
     
     if isinstance(df, pd.DataFrame):
-        # Filters
+        # --- FILTERS ---
         sports = ["All"] + list(df['Sport'].unique()) if 'Sport' in df.columns else ["All"]
         col1, col2 = st.columns([1, 3])
-        with col1: selected_sport = st.sidebar.selectbox("Filter Sport", sports)
+        with col1:
+            selected_sport = st.sidebar.selectbox("Filter Sport", sports)
+        
         if selected_sport != "All": df = df[df['Sport'] == selected_sport]
         
-        # KPI Cards
+        # --- KPI CARDS ---
         total_bets = len(df)
         top_edge = df['Edge'].max() if not df.empty else 0
         
@@ -38,6 +40,7 @@ def render_dashboard(bankroll, kelly_multiplier):
         """
         st.markdown(kpi_html, unsafe_allow_html=True)
 
+        # --- THE BETTING FEED ---
         st.markdown("### 📋 Actionable Recommendations")
         
         if not df.empty:
@@ -45,6 +48,7 @@ def render_dashboard(bankroll, kelly_multiplier):
 
         for i, row in df.iterrows():
             sport_icon = utils.get_team_emoji(row.get('Sport', 'Soccer'))
+            # *** FIX: Ensure Date is displayed ***
             match_time = row.get('Formatted_Date', 'Time TBD')
             risk_badge = utils.get_risk_badge(row)
             bookie = row.get('Info', 'Best Price')
@@ -55,6 +59,7 @@ def render_dashboard(bankroll, kelly_multiplier):
             
             with st.container():
                 c1, c2 = st.columns([3, 1])
+                
                 with c1:
                     st.markdown(f"""
                     <div class="bet-ticket">
@@ -82,7 +87,13 @@ def render_dashboard(bankroll, kelly_multiplier):
                     st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row['Odds']:.2f}</div></div>""", unsafe_allow_html=True)
                     
                     with st.expander("Details"):
-                        st.write(f"**Implied:** {(1/row['Odds']):.1%}")
+                        # *** CRITICAL FIX: Handle ZeroDivisionError for Arbitrage ***
+                        if row['Odds'] > 0:
+                            implied = 1 / row['Odds']
+                            st.write(f"**Implied:** {implied:.1%}")
+                        else:
+                            st.write("**Implied:** N/A (Arbitrage)")
+                            
                         key = row['key']
                         is_in_slip = any(b['key'] == key for b in st.session_state.bet_slip)
                         if st.checkbox("Add to Slip", value=is_in_slip, key=key):
@@ -93,11 +104,15 @@ def render_dashboard(bankroll, kelly_multiplier):
                                 if is_in_slip:
                                     st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
 
-        # Smart Parlay Builder
+        # --- SMART PARLAY BUILDER ---
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
-        if len(df) >= 2:
-            parlay_legs = df.sort_values('Edge', ascending=False).to_dict('records')
+        
+        # Filter out Arbitrage bets (Odds 0)
+        parlay_candidates = df[df['Odds'] > 1.0]
+        
+        if len(parlay_candidates) >= 2:
+            parlay_legs = parlay_candidates.sort_values('Edge', ascending=False).to_dict('records')
             best_parlay_edge = -1; best_parlay_combo = None
             for combo in combinations(parlay_legs[:5], 2): 
                 if combo[0]['Match'] != combo[1]['Match']:
@@ -122,12 +137,17 @@ def render_market_map():
     df = utils.load_data(utils.LATEST_URL)
     if isinstance(df, pd.DataFrame):
         if 'Bet Type' in df.columns: df = df[df['Bet Type'] != 'ARBITRAGE']
-        df['Implied'] = 1 / df['Odds']
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', name='Fair Value', line=dict(color='#444', dash='dash')))
-        fig.add_trace(go.Scatter(x=df['Implied'], y=df['Confidence'], mode='markers', marker=dict(size=df['Edge']*150 + 10, color=df['Edge'], colorscale='Viridis', showscale=True), text=df['Match'] + '<br>' + df['Bet'], hoverinfo='text'))
-        fig.update_layout(template="plotly_dark", height=600, xaxis_title="Implied Prob", yaxis_title="Model Prob")
-        st.plotly_chart(fig, use_container_width=True)
+        # Filter out bad odds
+        df = df[df['Odds'] > 0]
+        
+        if not df.empty:
+            df['Implied'] = 1 / df['Odds']
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', name='Fair Value', line=dict(color='#444', dash='dash')))
+            fig.add_trace(go.Scatter(x=df['Implied'], y=df['Confidence'], mode='markers', marker=dict(size=df['Edge']*150 + 10, color=df['Edge'], colorscale='Viridis', showscale=True), text=df['Match'] + '<br>' + df['Bet'], hoverinfo='text'))
+            fig.update_layout(template="plotly_dark", height=600, xaxis_title="Implied Prob", yaxis_title="Model Prob")
+            st.plotly_chart(fig, use_container_width=True)
+        else: st.info("No valid bets for Market Map.")
     else: st.info("No data loaded.")
 
 def render_bet_tracker(bankroll):
@@ -146,35 +166,21 @@ def render_bet_tracker(bankroll):
 def render_history():
     st.markdown('<p class="gradient-text">📜 History</p>', unsafe_allow_html=True)
     df = utils.load_data(utils.HISTORY_URL)
-    
     if isinstance(df, pd.DataFrame):
-        if 'Result' not in df.columns:
-            st.info("No results settled yet.")
-            st.dataframe(df)
-            return
-
-        # Metrics (Settled Only)
+        if 'Result' not in df.columns: st.info("No results settled yet."); st.dataframe(df); return
+        
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
         if not settled.empty:
-            total_profit = settled['Profit'].sum()
-            win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
-            c1, c2 = st.columns(2)
-            c1.metric("Total Profit", f"{total_profit:.2f}u")
-            c2.metric("Win Rate", f"{win_rate:.1%}")
-            st.divider()
-
-        # HTML Table with Badges
+            total_profit = settled['Profit'].sum(); win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
+            c1, c2 = st.columns(2); c1.metric("Total Profit", f"{total_profit:.2f}u"); c2.metric("Win Rate", f"{win_rate:.1%}"); st.divider()
+        
         display_df = df.copy()
         display_df['Result'] = display_df['Result'].fillna('Pending')
         display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
         
-        # *** FIX: Ensure Date is displayed and Profit is formatted ***
-        display_df['Profit'] = display_df['Profit'].fillna(0.0).map('{:.2f}'.format)
-        
+        # *** FIX: Ensure Date is displayed ***
         cols = ['Formatted_Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
         display_df = display_df.rename(columns={'Formatted_Date': 'Date'})
-        
-        # Filter to existing columns
         cols = [c for c in cols if c in display_df.columns]
         
         st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
@@ -182,4 +188,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v48.0 (Enterprise Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v49.0 (Enterprise Edition)")
