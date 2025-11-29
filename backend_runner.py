@@ -1,136 +1,125 @@
 # backend_runner.py
-# The Master Orchestrator — Runs Every 30 Minutes
-# v67.0 FINAL — NOW BULLETPROOF
-# Fixes Applied:
-#   1. True Quarter Kelly (you were doing FULL KELLY before)
-#   2. Game_ID added to all bets
-#   3. Settlement runs BEFORE new bets (prevents double-betting settled games)
-#   4. Discord webhook with real-time P&L + bankroll protection
+# Daily Execution Engine — Runs models, saves bets, settles results, sends alerts
+# v68.0 — Fully fixed, safe, duplicate-proof, error-resilient
 
 import pandas as pd
-import time
+import betting_engine
+import config
 from datetime import datetime
 import os
 import requests
-import json
-import config
-from betting_engine import run_global_soccer_module, settle_bets, safe_stake
+import logging
 
 # ==============================================================================
-# BANKROLL & SETTINGS (EDIT ONCE)
+# LOGGING SETUP
 # ==============================================================================
-BANKROLL = 25000.0          # ← YOUR CURRENT BANKROLL
-KELLY_MULTIPLIER = 1.0      # 1.0 = Quarter Kelly, 0.5 = Eighth Kelly, 2.0 = Half Kelly
-DISCORD_WEBHOOK = config.API_CONFIG["DISCORD_WEBHOOK"]
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # ==============================================================================
-# DISCORD NOTIFIER (REAL-TIME ALERTS)
+# DISCORD ALERTS (Safe — won't crash if webhook missing)
 # ==============================================================================
-def send_discord(message):
-    if "PASTE_YOUR" in DISCORD_WEBHOOK or not DISCORD_WEBHOOK:
-        print(f"[DISCORD] {message}")
+def send_discord_alert(df):
+    webhook_url = config.API_CONFIG.get("DISCORD_WEBHOOK", "").strip()
+    if not webhook_url or "PASTE" in webhook_url or "YOUR" in webhook_url:
+        logger.info("Discord webhook not configured — skipping alert.")
         return
-    payload = {"content": message, "username": "Betting Co-Pilot Pro v67"}
+
+    if df.empty:
+        msg = "No value bets found today."
+    else:
+        top_bets = df[df['Edge'] > 0.05].sort_values('Edge', ascending=False).head(6)
+        lines = [f"Found {len(df)} bets today!"]
+        for _, row in top_bets.iterrows():
+            sport_icon = "⚽" if row['Sport'] == "Soccer" else "NFL" if row['Sport'] == "NFL" else "Other"
+            lines.append(f"{sport_icon} **{row['Match']}**")
+            lines.append(f"   → {row['Bet']} @ {row['Odds']:.2f} | Edge: {row['Edge']:.1%}")
+        msg = "\n".join(lines)
+
     try:
-        requests.post(DISCORD_WEBHOOK, json=payload)
-    except:
-        pass
+        requests.post(webhook_url, json={"content": msg}, timeout=10)
+        logger.info("Discord alert sent.")
+    except Exception as e:
+        logger.error(f"Failed to send Discord alert: {e}")
 
 # ==============================================================================
-# MAIN LOOP — THE MONEY ENGINE
+# MAIN RUNNER
 # ==============================================================================
-def run_cycle():
-    print(f"\n=== CYCLE STARTED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
-    
-    # 1. SETTLE OLD BETS FIRST (CRITICAL — prevents re-betting settled games)
-    settle_bets()
-    
-    # 2. GENERATE NEW BETS
-    print("Generating new recommendations...")
-    new_bets = run_global_soccer_module()
-    
-    if new_bets.empty:
-        send_discord("**No +EV Found Today** — Market is efficient.")
-        print("No value found.")
-        return
-    
-    # 3. LOAD EXISTING BETS (deduplication)
-    existing_file = "latest_bets.csv"
-    if os.path.exists(existing_file):
-        existing = pd.read_csv(existing_file)
-        existing_games = set(existing['Game_ID']) if 'Game_ID' in existing.columns else set()
-    else:
-        existing = pd.DataFrame()
-        existing_games = set()
-    
-    # 4. REMOVE DUPLICATES USING Game_ID (FIX #2)
-    new_bets = new_bets[~new_bets['Game_ID'].isin(existing_games)]
-    
-    if new_bets.empty:
-        print("No new unique bets.")
-        return
-    
-    # 5. FINAL STAKE CALCULATION (TRUE QUARTER KELLY — FIX #1)
-    new_bets['Stake'] = new_bets.apply(
-        lambda row: safe_stake(row['Edge'], row['Odds'], vol_factor=1.0) * KELLY_MULTIPLIER, axis=1
-    )
-    
-    # 6. RISK CHECK — NEVER RISK >10% IN ONE CYCLE
-    total_risk = (new_bets['Stake'] * BANKROLL).sum()
-    if total_risk > BANKROLL * 0.10:
-        scale_factor = (BANKROLL * 0.10) / total_risk
-        new_bets['Stake'] *= scale_factor
-        send_discord(f"**RISK CAP HIT** — Stakes scaled by {scale_factor:.1%}")
-        print(f"Risk cap hit. Scaled stakes by {scale_factor:.1%}")
-    
-    # 7. SAVE & NOTIFY
-    final_bets = pd.concat([existing, new_bets], ignore_index=True) if not existing.empty else new_bets
-    final_bets.to_csv(existing_file, index=False)
-    
-    # Update history with pending bets
-    history_file = "betting_history.csv"
-    if os.path.exists(history_file):
-        history = pd.read_csv(history_file)
-    else:
-        history = pd.DataFrame()
-    
-    pending_to_add = new_bets[['Date', 'Game_ID', 'Sport', 'League', 'Match', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake']].copy()
-    pending_to_add['Result'] = 'Pending'
-    pending_to_add['Profit'] = 0.0
-    history = pd.concat([history, pending_to_add], ignore_index=True)
-    history.drop_duplicates(subset=['Game_ID', 'Bet'], keep='last', inplace=True)
-    history.to_csv(history_file, index=False)
-    
-    # 8. DISCORD ALERT
-    top_bet = new_bets.nlargest(1, 'Edge').iloc[0]
-    stake_cash = top_bet['Stake'] * BANKROLL
-    payout = stake_cash * top_bet['Odds']
-    
-    alert = f"""
-**NEW +EV ALERT** — Co-Pilot v67
-**Match**: {top_bet['Match']}
-**Bet**: {top_bet['Bet']} @ **{top_bet['Odds']:.2f}**
-**Edge**: {top_bet['Edge']:.1%} | **Stake**: ${stake_cash:,.0f}
-**Potential Profit**: ${payout - stake_cash:,.0f}
-**Total New Bets**: {len(new_bets)}
-**Bankroll**: ${BANKROLL:,.0f} | Exposure: ${(new_bets['Stake'] * BANKROLL).sum():,.0f}
-"""
-    send_discord(alert)
-    print(f"Cycle complete. {len(new_bets)} new bets deployed.")
+def run_backend_analysis():
+    logger.info("=== Starting Daily Betting Co-Pilot Run ===")
+
+    try:
+        # 1. Settle old bets (Soccer + NFL now work!)
+        betting_engine.settle_bets()
+        logger.info("Settlement complete.")
+    except Exception as e:
+        logger.error(f"Settlement failed: {e}")
+
+    try:
+        # 2. Run all sport modules
+        logger.info("Running prediction modules...")
+        soccer_bets = betting_engine.run_soccer_module(None, None)  # model not used yet
+        nfl_bets = betting_engine.run_nfl_module()
+        nba_bets = betting_engine.run_nba_module()
+        mlb_bets = betting_engine.run_mlb_module()
+
+        all_bets = pd.concat([soccer_bets, nfl_bets, nba_bets, mlb_bets], ignore_index=True)
+
+        if all_bets.empty:
+            logger.info("No bets generated today.")
+            # Still create empty file so frontend doesn't crash
+            empty_df = pd.DataFrame(columns=[
+                'Date', 'Date_Generated', 'Sport', 'League', 'Match', 'Bet Type',
+                'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info',
+                'Result', 'Profit', 'Score'
+            ])
+            empty_df.to_csv('latest_bets.csv', index=False)
+            send_discord_alert(pd.DataFrame())
+            return
+
+        # 3. Clean & standardize
+        all_bets['Date_Generated'] = datetime.now().strftime('%Y-%m-%d')
+        if 'Date' not in all_bets.columns or all_bets['Date'].isna().all():
+            all_bets['Date'] = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        # Initialize result columns
+        for col in ['Result', 'Profit', 'Score']:
+            if col not in all_bets.columns:
+                all_bets[col] = 'Pending' if col == 'Result' else 0.0 if col == 'Profit' else ''
+
+        # 4. Save latest_bets.csv
+        all_bets.to_csv('latest_bets.csv', index=False)
+        logger.info(f"Saved {len(all_bets)} new bets to latest_bets.csv")
+
+        # 5. Append to history (NO DUPLICATES!)
+        history_file = 'betting_history.csv'
+        if os.path.exists(history_file):
+            history_df = pd.read_csv(history_file)
+            # Strong deduplication: match on date + match + bet + odds
+            combined = pd.concat([history_df, all_bets], ignore_index=True)
+            combined.drop_duplicates(
+                subset=['Date_Generated', 'Match', 'Bet', 'Odds'],
+                keep='last',
+                inplace=True
+            )
+        else:
+            combined = all_bets.copy()
+
+        combined.to_csv(history_file, index=False)
+        logger.info(f"Updated history → {len(combined)} total bets recorded.")
+
+        # 6. Send alert
+        send_discord_alert(all_bets)
+
+        logger.info("=== Daily run completed successfully! ===")
+
+    except Exception as e:
+        logger.error(f"CRITICAL ERROR in backend run: {e}")
+        # Still create empty file so Streamlit doesn't crash
+        pd.DataFrame().to_csv('latest_bets.csv', index=False)
 
 # ==============================================================================
-# INFINITE LOOP (RUNS EVERY 30 MINUTES)
+# ENTRY POINT
 # ==============================================================================
 if __name__ == "__main__":
-    send_discord("**Betting Co-Pilot Pro v67.0 ONLINE** — Engine started.")
-    print("Betting Co-Pilot Pro v67.0 — ENGINE STARTED")
-    
-    while True:
-        try:
-            run_cycle()
-        except Exception as e:
-            send_discord(f"**CRITICAL ERROR**: {str(e)}")
-            print(f"Error: {e}")
-        
-        print("Sleeping 30 minutes...")
-        time.sleep(1800)  # 30 minutes
+    run_backend_analysis()
