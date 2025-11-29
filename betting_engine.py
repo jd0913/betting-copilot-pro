@@ -9,7 +9,7 @@ from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score, cross_val_predict
 from scipy.stats import poisson
 import joblib
 import nfl_data_py as nfl
@@ -44,11 +44,26 @@ def mutate_genome(genome):
     return mutant
 
 def build_ensemble_from_genome(genome):
+    # 1. XGBoost
     xgb_clf = xgb.XGBClassifier(objective='multi:softprob', eval_metric='mlogloss', use_label_encoder=False, n_estimators=int(genome['xgb_n_estimators']), max_depth=int(genome['xgb_max_depth']), learning_rate=genome['xgb_learning_rate'], random_state=42, n_jobs=-1)
+    # 2. Random Forest
     rf_clf = RandomForestClassifier(n_estimators=int(genome['rf_n_estimators']), max_depth=int(genome['rf_max_depth']), random_state=42, n_jobs=-1)
+    # 3. Neural Network (The Deep Learning Component)
     nn_clf = MLPClassifier(hidden_layer_sizes=(int(genome['nn_hidden_layer_size']), int(genome['nn_hidden_layer_size'] // 2)), alpha=genome['nn_alpha'], activation='relu', solver='adam', max_iter=500, random_state=42)
+    # 4. Logistic Regression
     lr_clf = LogisticRegression(multi_class='multinomial', solver='lbfgs', max_iter=1000)
+    
     return VotingClassifier(estimators=[('xgb', xgb_clf), ('rf', rf_clf), ('nn', nn_clf), ('lr', lr_clf)], voting='soft', n_jobs=-1)
+
+def train_meta_model(X, y, primary_model):
+    """Meta-Labeling: Trains a model to predict if the primary model is WRONG."""
+    try:
+        preds = cross_val_predict(primary_model, X, y, cv=3)
+        meta_y = (preds == y).astype(int)
+        meta_clf = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+        meta_clf.fit(X, meta_y)
+        return meta_clf
+    except: return None
 
 def evolve_and_train(X, y):
     print("   🧬 Initiating Evolutionary Cycle...")
@@ -65,9 +80,13 @@ def evolve_and_train(X, y):
         winner_genome = current_genome
         
     final_model = build_ensemble_from_genome(winner_genome)
+    
+    # Train Meta-Model
+    meta_model = train_meta_model(X, y, final_model)
+    
     calibrated_model = CalibratedClassifierCV(final_model, method='isotonic', cv=3)
     calibrated_model.fit(X, y)
-    return calibrated_model
+    return calibrated_model, meta_model
 
 # ==============================================================================
 # 2. DATA FETCHING & ARBITRAGE
@@ -112,6 +131,21 @@ def fuzzy_match_team(team_name, team_list):
     if score >= 80: return match
     return None
 
+def get_news_alert(team1, team2):
+    """Scrapes Google News for injury/sentiment."""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        query = f'"{team1}" OR "{team2}" injury OR doubt OR out'
+        url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbm=nws"
+        res = requests.get(url, headers=headers)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        headlines = soup.find_all('div', {'role': 'heading'})
+        for h in headlines[:3]:
+            if any(keyword in h.text.lower() for keyword in ['injury', 'doubt', 'out', 'miss', 'sidelined']):
+                return f"⚠️ News: {h.text}"
+    except: return None
+    return None
+
 # ==============================================================================
 # 3. SPORT MODULES
 # ==============================================================================
@@ -126,7 +160,6 @@ def calculate_soccer_features(df):
     volatility_map = {t: np.std(v[-10:]) if len(v) > 10 else 0.25 for t, v in team_variance.items()}
     return df, elo_ratings, volatility_map
 
-# *** THIS IS THE FUNCTION THAT WAS MISSING ***
 def train_soccer_brain():
     print("   > Training Soccer Brain (Darwinian)...")
     seasons = ['2324', '2223', '2122']; df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/E0.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
@@ -140,14 +173,16 @@ def train_soccer_brain():
     df['elo_diff'] = df['HomeElo'] - df['AwayElo']; df['form_diff'] = df['HomeForm'] - df['AwayForm']
     features = ['elo_diff', 'form_diff']; X, y = df[features], df['FTR']
     le = LabelEncoder(); y_encoded = le.fit_transform(y); scaler = StandardScaler(); X_scaled = scaler.fit_transform(X)
-    living_model = evolve_and_train(X_scaled, y_encoded)
+    
+    living_model, meta_model = evolve_and_train(X_scaled, y_encoded)
+    
     avg_goals_home = df['FTHG'].mean(); avg_goals_away = df['FTAG'].mean()
     home_strength = df.groupby('HomeTeam').agg({'FTHG': 'mean', 'FTAG': 'mean'}).rename(columns={'FTHG': 'h_gf_avg', 'FTAG': 'h_ga_avg'})
     away_strength = df.groupby('AwayTeam').agg({'FTAG': 'mean', 'FTHG': 'mean'}).rename(columns={'FTAG': 'a_gf_avg', 'FTHG': 'a_ga_avg'})
     team_strengths = pd.concat([home_strength, away_strength], axis=1).fillna(1)
     team_strengths['attack'] = (team_strengths['h_gf_avg'] / avg_goals_home + team_strengths['a_gf_avg'] / avg_goals_away) / 2
     team_strengths['defence'] = (team_strengths['h_ga_avg'] / avg_goals_away + team_strengths['a_ga_avg'] / avg_goals_home) / 2
-    return {'model': living_model, 'le': le, 'scaler': scaler, 'elo_ratings': elo_ratings, 'volatility': volatility_map, 'team_strengths': team_strengths, 'avgs': (avg_goals_home, avg_goals_away)}, df
+    return {'model': living_model, 'meta_model': meta_model, 'le': le, 'scaler': scaler, 'elo_ratings': elo_ratings, 'volatility': volatility_map, 'team_strengths': team_strengths, 'avgs': (avg_goals_home, avg_goals_away)}, df
 
 def run_soccer_module(brain, historical_df):
     print("--- Running Soccer Module ---"); bets = []
@@ -165,6 +200,12 @@ def run_soccer_module(brain, historical_df):
                 except: h_form, a_form = 1.5, 1.5
                 feat_scaled = brain['scaler'].transform(pd.DataFrame([{'elo_diff': h_elo - a_elo, 'form_diff': h_form - a_form}]))
                 probs_alpha = brain['model'].predict_proba(feat_scaled)[0]
+                
+                # Meta-Labeling Check
+                if brain['meta_model']:
+                    trust_score = brain['meta_model'].predict_proba(feat_scaled)[0][1]
+                    if trust_score < 0.55: probs_alpha = (probs_alpha + np.array([0.33, 0.33, 0.33])) / 2
+                
                 try:
                     avg_goals_home, avg_goals_away = brain['avgs']; team_strengths = brain['team_strengths']
                     h_att, a_def = team_strengths.loc[model_home]['attack'], team_strengths.loc[model_away]['defence']; a_att, h_def = team_strengths.loc[model_away]['attack'], team_strengths.loc[model_home]['defence']
@@ -183,12 +224,13 @@ def run_soccer_module(brain, historical_df):
 
 def run_nfl_module():
     print("--- Running NFL Module ---"); bets = []; odds_data = get_live_odds('americanfootball_nfl')
+    team_map = config.NFL_TEAMS
     try: seasons = [2023, 2022, 2021]; df = nfl.import_pbp_data(years=seasons, downcast=True, cache=False); team_stats = df.groupby(['season', 'home_team']).agg({'yards_gained': 'mean', 'turnover_lost': 'mean'}).reset_index(); ypp_map = team_stats.groupby('home_team')['yards_gained'].mean().to_dict()
     except: ypp_map = {}
     for game in odds_data:
         profit, arb_info, bh, _, ba = find_arbitrage(game, 'NFL'); match_time = game.get('commence_time', 'Unknown')
         if profit > 0: bets.append({'Date': match_time, 'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
-        h_abbr = config.NFL_TEAMS.get(game['home_team']); a_abbr = config.NFL_TEAMS.get(game['away_team'])
+        h_abbr = team_map.get(game['home_team']); a_abbr = team_map.get(game['away_team'])
         if h_abbr and a_abbr:
             h_ypp = ypp_map.get(h_abbr, 5.0); a_ypp = ypp_map.get(a_abbr, 5.0); pred_margin = (h_ypp - a_ypp) * 7 + 2.5; model_prob_home = 0.50 + (pred_margin / 20)
             best_home = {'price': 0, 'book': ''}
