@@ -1,6 +1,6 @@
 # views.py
-# The "Self-Aware" Layouts (v62.1)
-# Fixes: ZeroDivisionError on Arbitrage Bets
+# The "Self-Aware" Layouts (v63.0)
+# Features: Full History Metrics, Smart Dashboard, Bet Tracker
 
 import streamlit as st
 import pandas as pd
@@ -19,7 +19,7 @@ def render_dashboard(bankroll, kelly_multiplier):
     # Calculate Live Stats
     stats = utils.get_performance_stats(history_df)
     
-    # --- 1. SYSTEM HEALTH & PERFORMANCE TICKER ---
+    # --- 1. SYSTEM INTELLIGENCE TICKER ---
     st.markdown("### 🧠 System Intelligence")
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Real-World Win Rate", f"{stats['win_rate']:.1%}", delta="Live Performance")
@@ -62,7 +62,8 @@ def render_dashboard(bankroll, kelly_multiplier):
                 c1, c2 = st.columns([3, 1])
                 
                 with c1:
-                    st.markdown(f"""
+                    # Safe HTML formatting
+                    card_html = f"""
                     <div class="bet-ticket">
                         <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
                             <span style="color:#8b92a5; font-size:0.8em;">{match_time} • {row.get('League', 'League')}</span>
@@ -82,13 +83,13 @@ def render_dashboard(bankroll, kelly_multiplier):
                             <div><div class="metric-label">STAKE</div><div class="metric-value">${cash_stake:.2f}</div></div>
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
                 
                 with c2:
                     st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row['Odds']:.2f}</div></div>""", unsafe_allow_html=True)
                     
                     with st.expander("Details"):
-                        # *** FIX: Handle ZeroDivisionError for Arbitrage ***
                         if row['Odds'] > 0:
                             st.write(f"**Implied:** {(1/row['Odds']):.1%}")
                         else:
@@ -110,7 +111,6 @@ def render_dashboard(bankroll, kelly_multiplier):
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
         
-        # Filter out Arbitrage bets (Odds 0)
         parlay_candidates = df[(df['Odds'] > 1.1) & (df['Odds'] < 3.0) & (df['Bet Type'] != 'ARBITRAGE')]
         
         if len(parlay_candidates) >= 2:
@@ -126,13 +126,7 @@ def render_dashboard(bankroll, kelly_multiplier):
             for combo in combinations(value_legs[:6], 3):
                 if len(set([c['Match'] for c in combo])) == 3: value_combo = combo; break
 
-            # 3. Moonshot (High Risk)
-            lotto_legs = df[(df['Odds'] > 2.5) & (df['Edge'] > 0)].sort_values('Edge', ascending=False).to_dict('records')
-            lotto_combo = None
-            for combo in combinations(lotto_legs[:8], 4):
-                if len(set([c['Match'] for c in combo])) == 4: lotto_combo = combo; break
-
-            tab1, tab2, tab3 = st.tabs(["🛡️ Safe (2-Leg)", "🚀 Value (3-Leg)", "🎰 Lotto (4-Leg)"])
+            tab1, tab2 = st.tabs(["🛡️ Safe (2-Leg)", "🚀 Value (3-Leg)"])
 
             def render_parlay_card(combo, title):
                 if not combo: st.info("Not enough bets found."); return
@@ -150,13 +144,9 @@ def render_dashboard(bankroll, kelly_multiplier):
                     st.metric("Total Odds", f"{tot_odds:.2f}")
                     st.metric("Win Prob", f"{tot_prob:.1%}")
                     st.metric("Rec. Stake", f"${kelly_stake_cash:.2f}")
-                
-                user_stake = st.number_input(f"Wager ($) - {title}", value=float(int(kelly_stake_cash)) if kelly_stake_cash > 1 else 5.0, step=5.0)
-                st.success(f"💰 Potential Payout: **${user_stake * tot_odds:.2f}**")
 
             with tab1: render_parlay_card(safe_combo, "Bankroll Builder")
             with tab2: render_parlay_card(value_combo, "Value Stack")
-            with tab3: render_parlay_card(lotto_combo, "Moonshot Ticket")
 
         else: st.info("Not enough value bets to build a parlay.")
 
@@ -183,6 +173,10 @@ def render_market_map():
 
 def render_bet_tracker(bankroll):
     st.markdown('<p class="gradient-text">🎟️ Bet Slip</p>', unsafe_allow_html=True)
+    
+    # Allow decimal bankroll input
+    bankroll = st.number_input("Your Bankroll ($)", value=float(bankroll), min_value=0.0, step=0.01, format="%.2f", key="tracker_bankroll")
+    
     if st.session_state.bet_slip:
         slip_df = pd.DataFrame(st.session_state.bet_slip)
         total_stake = 0; potential_return = 0
@@ -196,23 +190,56 @@ def render_bet_tracker(bankroll):
 
 def render_history():
     st.markdown('<p class="gradient-text">📜 History</p>', unsafe_allow_html=True)
+    
+    # CSS for center alignment
     st.markdown("""<style>th { text-align: center !important; } td { text-align: center !important; }</style>""", unsafe_allow_html=True)
+    
     df = utils.load_data(utils.HISTORY_URL)
+    
     if isinstance(df, pd.DataFrame):
-        if 'Result' not in df.columns: st.info("No results settled yet."); st.dataframe(df); return
+        if 'Result' not in df.columns:
+            st.info("No results settled yet.")
+            st.dataframe(df)
+            return
+
+        # --- METRICS (ALWAYS VISIBLE) ---
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
+        
         if not settled.empty:
-            total_profit = settled['Profit'].sum(); win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
-            c1, c2 = st.columns(2); c1.metric("Total Profit", f"{total_profit:.2f}u"); c2.metric("Win Rate", f"{win_rate:.1%}"); st.divider()
-        display_df = df.copy(); display_df['Result'] = display_df['Result'].fillna('Pending'); display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
+            total_profit = settled['Profit'].sum()
+            win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
+            total_bets = len(settled)
+        else:
+            total_profit = 0.0
+            win_rate = 0.0
+            total_bets = 0
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Model Profit", f"{total_profit:.2f}u")
+        c2.metric("Model Accuracy", f"{win_rate:.1%}")
+        c3.metric("Total Bets Settled", total_bets)
+        st.divider()
+
+        # --- TABLE DISPLAY ---
+        display_df = df.copy()
+        display_df['Result'] = display_df['Result'].fillna('Pending')
+        display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
+        
+        # Fix Profit Display
         display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
-        if 'Formatted_Date' in display_df.columns: display_df = display_df.rename(columns={'Formatted_Date': 'Match Time'})
-        elif 'Date' in display_df.columns: display_df = display_df.rename(columns={'Date': 'Match Time'})
+
+        # Rename and Select Columns
+        if 'Formatted_Date' in display_df.columns:
+            display_df = display_df.rename(columns={'Formatted_Date': 'Match Time'})
+        elif 'Date' in display_df.columns:
+            display_df = display_df.rename(columns={'Date': 'Match Time'})
+            
         cols = ['Match Time', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
         cols = [c for c in cols if c in display_df.columns]
+        
         st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
         st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v62.1 (Self-Aware Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v63.0 (Self-Aware Edition)")
