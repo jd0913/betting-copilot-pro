@@ -1,6 +1,7 @@
 # ==============================================================================
-# backend_runner.py - "The Date Fix" Engine (v39.0)
-# Features: Guaranteed Date Column, Strict Settlement, Multi-Sport
+# backend_runner.py - "The Self-Contained Monolith" (v51.0)
+# Features: Genetic AI, Neural Nets, Settlement, Multi-Sport, Live Odds, Alerts
+# Fixes: NameError by consolidating all logic into one file.
 # ==============================================================================
 import pandas as pd
 import numpy as np
@@ -37,20 +38,19 @@ API_CONFIG = {
 }
 
 # ==============================================================================
-# 1. SETTLEMENT ENGINE
+# 1. SETTLEMENT ENGINE (Tracks W/L/D)
 # ==============================================================================
 def settle_bets():
+    """Reads history, checks results, and marks W/L/D."""
     print("--- ⚖️ Running Settlement Engine ---")
     history_file = 'betting_history.csv'
     if not os.path.exists(history_file): return
 
     df = pd.read_csv(history_file)
-    
-    # Ensure columns exist
     if 'Result' not in df.columns: df['Result'] = 'Pending'
     if 'Profit' not in df.columns: df['Profit'] = 0.0
+    if 'Date' not in df.columns: df['Date'] = datetime.now().strftime('%Y-%m-%d')
     
-    # Filter for pending bets
     pending = df[df['Result'] == 'Pending']
     if pending.empty: return
 
@@ -64,14 +64,10 @@ def settle_bets():
             results['Date'] = pd.to_datetime(results['Date'], dayfirst=True)
             for idx, row in soccer_pending.iterrows():
                 try:
-                    # Check Date if available
-                    if pd.notna(row['Date']):
-                        match_date = pd.to_datetime(row['Date']).replace(tzinfo=None)
-                        if match_date > now: continue 
-
+                    match_date = pd.to_datetime(row['Date']).replace(tzinfo=None)
+                    if match_date > now: continue 
                     teams = row['Match'].split(' vs '); home = teams[0]; away = teams[1]
-                    match = results[(results['HomeTeam'] == home) & (results['AwayTeam'] == away)].tail(1)
-                    
+                    match = results[(results['HomeTeam'] == home) & (results['AwayTeam'] == away) & (results['Date'] >= match_date - timedelta(days=1))].tail(1)
                     if not match.empty and pd.notna(match.iloc[0]['FTR']):
                         res = match.iloc[0]['FTR']
                         won = (row['Bet'] == 'Home Win' and res == 'H') or (row['Bet'] == 'Draw' and res == 'D') or (row['Bet'] == 'Away Win' and res == 'A')
@@ -79,7 +75,7 @@ def settle_bets():
                         df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1) if won else -row['Stake']
                 except: continue
         except: pass
-    
+
     # NFL Settlement
     nfl_pending = pending[pending['Sport'] == 'NFL']
     if not nfl_pending.empty:
@@ -88,10 +84,8 @@ def settle_bets():
             finished = games[games['result'].notna()]
             for idx, row in nfl_pending.iterrows():
                 try:
-                    if pd.notna(row['Date']):
-                        match_date = pd.to_datetime(row['Date']).replace(tzinfo=None)
-                        if match_date > now: continue
-
+                    match_date = pd.to_datetime(row['Date']).replace(tzinfo=None)
+                    if match_date > now: continue
                     teams = row['Match'].split(' @ '); away = teams[0]; home = teams[1]
                     game = finished[(finished['home_team'] == home) & (finished['away_team'] == away)].tail(1)
                     if not game.empty:
@@ -108,13 +102,15 @@ def settle_bets():
     df.to_csv(history_file, index=False)
 
 # ==============================================================================
-# 2. THE DARWIN MODULE (Unchanged)
+# 2. THE DARWIN MODULE: GENETIC EVOLUTION
 # ==============================================================================
 GENOME_FILE = 'model_genome.json'
+
 def load_or_initialize_genome():
     if os.path.exists(GENOME_FILE):
         with open(GENOME_FILE, 'r') as f: return json.load(f)
     return {'generation': 0, 'best_score': 10.0, 'xgb_n_estimators': 200, 'xgb_max_depth': 3, 'xgb_learning_rate': 0.1, 'rf_n_estimators': 200, 'rf_max_depth': 10, 'nn_hidden_layer_size': 64, 'nn_alpha': 0.0001}
+
 def mutate_genome(genome):
     mutant = genome.copy(); mutation_rate = 0.3
     if random.random() < mutation_rate: mutant['xgb_n_estimators'] = int(genome['xgb_n_estimators'] * random.uniform(0.8, 1.2))
@@ -122,20 +118,26 @@ def mutate_genome(genome):
     if random.random() < mutation_rate: mutant['rf_n_estimators'] = int(genome['rf_n_estimators'] * random.uniform(0.8, 1.2))
     if random.random() < mutation_rate: mutant['nn_hidden_layer_size'] = int(genome['nn_hidden_layer_size'] * random.uniform(0.8, 1.2))
     return mutant
+
 def build_ensemble_from_genome(genome):
     xgb_clf = xgb.XGBClassifier(objective='multi:softprob', eval_metric='mlogloss', use_label_encoder=False, n_estimators=int(genome['xgb_n_estimators']), max_depth=int(genome['xgb_max_depth']), learning_rate=genome['xgb_learning_rate'], random_state=42, n_jobs=-1)
     rf_clf = RandomForestClassifier(n_estimators=int(genome['rf_n_estimators']), max_depth=int(genome['rf_max_depth']), random_state=42, n_jobs=-1)
     nn_clf = MLPClassifier(hidden_layer_sizes=(int(genome['nn_hidden_layer_size']), int(genome['nn_hidden_layer_size'] // 2)), alpha=genome['nn_alpha'], activation='relu', solver='adam', max_iter=500, random_state=42)
     lr_clf = LogisticRegression(multi_class='multinomial', solver='lbfgs', max_iter=1000)
     return VotingClassifier(estimators=[('xgb', xgb_clf), ('rf', rf_clf), ('nn', nn_clf), ('lr', lr_clf)], voting='soft', n_jobs=-1)
+
 def evolve_and_train(X, y):
+    print("   🧬 Initiating Evolutionary Cycle...")
     current_genome = load_or_initialize_genome(); mutant_genome = mutate_genome(current_genome); tscv = TimeSeriesSplit(n_splits=3)
     champ_model = build_ensemble_from_genome(current_genome); champ_scores = cross_val_score(champ_model, X, y, cv=tscv, scoring='neg_log_loss'); champ_fitness = -champ_scores.mean()
     mutant_model = build_ensemble_from_genome(mutant_genome); mutant_scores = cross_val_score(mutant_model, X, y, cv=tscv, scoring='neg_log_loss'); mutant_fitness = -mutant_scores.mean()
     if mutant_fitness < champ_fitness:
+        print("      > 🚀 EVOLUTION! Mutant wins.")
         mutant_genome['best_score'] = mutant_fitness; mutant_genome['generation'] = current_genome['generation'] + 1; winner_genome = mutant_genome
         with open(GENOME_FILE, 'w') as f: json.dump(winner_genome, f)
-    else: winner_genome = current_genome
+    else:
+        print("      > 💀 Champion remains.")
+        winner_genome = current_genome
     final_model = build_ensemble_from_genome(winner_genome); calibrated_model = CalibratedClassifierCV(final_model, method='isotonic', cv=3); calibrated_model.fit(X, y)
     return calibrated_model
 
@@ -208,11 +210,9 @@ def calculate_soccer_features(df):
     volatility_map = {t: np.std(v[-10:]) if len(v) > 10 else 0.25 for t, v in team_variance.items()}
     return df, elo_ratings, volatility_map
 
-def train_league_brain(div_code):
-    seasons = ['2324', '2223', '2122']; 
-    try: df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/{div_code}.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
-    except: return None, None
-    if df.empty: return None, None
+def train_soccer_brain():
+    print("   > Training Soccer Brain (Darwinian)...")
+    seasons = ['2324', '2223', '2122']; df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/E0.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
     df, elo_ratings, volatility_map = calculate_soccer_features(df)
     h_stats = df[['Date', 'HomeTeam', 'FTR']].rename(columns={'HomeTeam': 'Team'}); h_stats['Points'] = h_stats['FTR'].map({'H': 3, 'D': 1, 'A': 0})
     a_stats = df[['Date', 'AwayTeam', 'FTR']].rename(columns={'AwayTeam': 'Team'}); a_stats['Points'] = a_stats['FTR'].map({'A': 3, 'D': 1, 'H': 0})
@@ -234,39 +234,45 @@ def train_league_brain(div_code):
 
 def run_global_soccer_module():
     print("--- Running Global Soccer Module (Big 5 + UCL) ---"); bets = []
+    
+    # Train the brain ONCE (using EPL data as proxy for model logic)
+    brain, historical_df = train_soccer_brain()
+    
     LEAGUE_MAP = {'soccer_epl': 'E0', 'soccer_spain_la_liga': 'SP1', 'soccer_germany_bundesliga': 'D1', 'soccer_italy_serie_a': 'I1', 'soccer_france_ligue_one': 'F1', 'soccer_uefa_champs_league': 'UCL'}
     for sport_key, div_code in LEAGUE_MAP.items():
         print(f"   > Scanning {sport_key}...")
         odds_data = get_live_odds(sport_key)
-        brain = None; historical_df = None
-        if div_code != 'UCL': brain, historical_df = train_league_brain(div_code)
         for game in odds_data:
             profit, arb_info, bh, bd, ba = find_arbitrage(game, 'Soccer')
             match_time = game.get('commence_time', 'Unknown')
             if profit > 0: bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
-            if brain and historical_df is not None:
-                model_home = fuzzy_match_team(game['home_team'], list(brain['elo_ratings'].keys())); model_away = fuzzy_match_team(game['away_team'], list(brain['elo_ratings'].keys()))
-                if model_home and model_away:
-                    h_elo, a_elo = brain['elo_ratings'].get(model_home, 1500), brain['elo_ratings'].get(model_away, 1500)
-                    try: h_form = historical_df[historical_df['HomeTeam'] == model_home].sort_values('Date').iloc[-1]['HomeForm']; a_form = historical_df[historical_df['AwayTeam'] == model_away].sort_values('Date').iloc[-1]['AwayForm']
-                    except: h_form, a_form = 1.5, 1.5
-                    feat_scaled = brain['scaler'].transform(pd.DataFrame([{'elo_diff': h_elo - a_elo, 'form_diff': h_form - a_form}]))
-                    probs_alpha = brain['model'].predict_proba(feat_scaled)[0]
-                    try:
-                        avg_goals_home, avg_goals_away = brain['avgs']; team_strengths = brain['team_strengths']
-                        h_att, a_def = team_strengths.loc[model_home]['attack'], team_strengths.loc[model_away]['defence']; a_att, h_def = team_strengths.loc[model_away]['attack'], team_strengths.loc[model_home]['defence']
-                        exp_h, exp_a = h_att * a_def * avg_goals_home, a_att * h_def * avg_goals_away
-                        pm = np.array([[poisson.pmf(i, exp_h) * poisson.pmf(j, exp_a) for j in range(6)] for i in range(6)])
-                        p_h, p_d, p_a = np.sum(np.tril(pm, -1)), np.sum(np.diag(pm)), np.sum(np.triu(pm, 1))
-                    except: p_h, p_d, p_a = 0.33, 0.33, 0.33
-                    final_probs = {'Home Win': probs_alpha[brain['le'].transform(['H'])[0]] * 0.7 + p_h * 0.3, 'Draw': probs_alpha[brain['le'].transform(['D'])[0]] * 0.7 + p_d * 0.3, 'Away Win': probs_alpha[brain['le'].transform(['A'])[0]] * 0.7 + p_a * 0.3}
-                    h_vol = brain['volatility'].get(model_home, 0.25); a_vol = brain['volatility'].get(model_away, 0.25); vol_factor = 1.0 - ((h_vol + a_vol)/2 - 0.25)
-                    for outcome, odds_data in [('Home Win', bh), ('Draw', bd), ('Away Win', ba)]:
-                        if odds_data['price'] > 0:
-                            edge = (final_probs[outcome] * odds_data['price']) - 1
-                            if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'Moneyline', 'Bet': outcome, 'Odds': odds_data['price'], 'Edge': edge, 'Confidence': final_probs[outcome], 'Stake': (edge/(odds_data['price']-1))*0.25*vol_factor, 'Info': f"Best: {odds_data['book']}"})
+            
+            model_home = fuzzy_match_team(game['home_team'], list(brain['elo_ratings'].keys())); model_away = fuzzy_match_team(game['away_team'], list(brain['elo_ratings'].keys()))
+            if model_home and model_away:
+                h_elo, a_elo = brain['elo_ratings'].get(model_home, 1500), brain['elo_ratings'].get(model_away, 1500)
+                try: h_form = historical_df[historical_df['HomeTeam'] == model_home].sort_values('Date').iloc[-1]['HomeForm']; a_form = historical_df[historical_df['AwayTeam'] == model_away].sort_values('Date').iloc[-1]['AwayForm']
+                except: h_form, a_form = 1.5, 1.5
+                feat_scaled = brain['scaler'].transform(pd.DataFrame([{'elo_diff': h_elo - a_elo, 'form_diff': h_form - a_form}]))
+                probs_alpha = brain['model'].predict_proba(feat_scaled)[0]
+                try:
+                    avg_goals_home, avg_goals_away = brain['avgs']; team_strengths = brain['team_strengths']
+                    h_att, a_def = team_strengths.loc[model_home]['attack'], team_strengths.loc[model_away]['defence']; a_att, h_def = team_strengths.loc[model_away]['attack'], team_strengths.loc[model_home]['defence']
+                    exp_h, exp_a = h_att * a_def * avg_goals_home, a_att * h_def * avg_goals_away
+                    pm = np.array([[poisson.pmf(i, exp_h) * poisson.pmf(j, exp_a) for j in range(6)] for i in range(6)])
+                    p_h, p_d, p_a = np.sum(np.tril(pm, -1)), np.sum(np.diag(pm)), np.sum(np.triu(pm, 1))
+                except: p_h, p_d, p_a = 0.33, 0.33, 0.33
+                final_probs = {'Home Win': probs_alpha[brain['le'].transform(['H'])[0]] * 0.7 + p_h * 0.3, 'Draw': probs_alpha[brain['le'].transform(['D'])[0]] * 0.7 + p_d * 0.3, 'Away Win': probs_alpha[brain['le'].transform(['A'])[0]] * 0.7 + p_a * 0.3}
+                h_vol = brain['volatility'].get(model_home, 0.25); a_vol = brain['volatility'].get(model_away, 0.25); vol_factor = 1.0 - ((h_vol + a_vol)/2 - 0.25)
+                
+                for outcome, odds_data in [('Home Win', bh), ('Draw', bd), ('Away Win', ba)]:
+                    if odds_data['price'] > 0:
+                        edge = (final_probs[outcome] * odds_data['price']) - 1
+                        if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'Moneyline', 'Bet': outcome, 'Odds': odds_data['price'], 'Edge': edge, 'Confidence': final_probs[outcome], 'Stake': (edge/(odds_data['price']-1))*0.25*vol_factor, 'Info': f"Best: {odds_data['book']}"})
     return pd.DataFrame(bets)
 
+# ==============================================================================
+# 4. NFL MODULE
+# ==============================================================================
 def run_nfl_module():
     print("--- Running NFL Module ---"); bets = []; odds_data = get_live_odds('americanfootball_nfl')
     team_map = {"Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL", "Baltimore Ravens": "BAL", "Buffalo Bills": "BUF", "Carolina Panthers": "CAR", "Chicago Bears": "CHI", "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE", "Dallas Cowboys": "DAL", "Denver Broncos": "DEN", "Detroit Lions": "DET", "Green Bay Packers": "GB", "Houston Texans": "HOU", "Indianapolis Colts": "IND", "Jacksonville Jaguars": "JAX", "Kansas City Chiefs": "KC", "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC", "Los Angeles Rams": "LA", "Miami Dolphins": "MIA", "Minnesota Vikings": "MIN", "New England Patriots": "NE", "New Orleans Saints": "NO", "New York Giants": "NYG", "New York Jets": "NYJ", "Philadelphia Eagles": "PHI", "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF", "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB", "Tennessee Titans": "TEN", "Washington Commanders": "WAS"}
@@ -289,6 +295,9 @@ def run_nfl_module():
                 if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': best_home['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(best_home['price']-1))*0.25, 'Info': f"Best: {best_home['book']}"})
     return pd.DataFrame(bets)
 
+# ==============================================================================
+# 5. NBA MODULE
+# ==============================================================================
 def run_nba_module():
     print("--- Running NBA Module ---"); bets = []; odds_data = get_live_odds('basketball_nba'); team_power = {}; team_names = []
     try: stats = leaguedashteamstats.LeagueDashTeamStats(season="2023-24", measure_type_detailed_defense="Four Factors").get_data_frames()[0]; stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15); team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict(); team_names = list(team_power.keys())
@@ -311,6 +320,9 @@ def run_nba_module():
                 if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': best_home['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(best_home['price']-1))*0.25, 'Info': f"Best: {best_home['book']}"})
     return pd.DataFrame(bets)
 
+# ==============================================================================
+# 6. MLB MODULE
+# ==============================================================================
 def run_mlb_module():
     print("--- Running MLB Module ---"); bets = []; odds_data = get_live_odds('baseball_mlb')
     for game in odds_data:
@@ -343,32 +355,24 @@ def send_discord_alert(df):
 
 def run_backend_analysis():
     print("--- Starting Daily Global Backend Analysis (US Pro) ---")
-    
-    # 1. Settle Bets
     settle_bets()
     
-    # 2. Train Brains
-    soccer_brain, soccer_hist = train_soccer_brain()
-    
-    # 3. Run Modules
-    soccer_bets = run_soccer_module(soccer_brain, soccer_hist)
+    soccer_bets = run_global_soccer_module()
     nfl_bets = run_nfl_module()
     nba_bets = run_nba_module()
     mlb_bets = run_mlb_module()
     
     all_bets = pd.concat([soccer_bets, nfl_bets, nba_bets, mlb_bets], ignore_index=True)
     
-    # 4. Save & Archive
     if not all_bets.empty:
-        # *** FIX: Ensure Date is saved correctly ***
-        # If 'Date' is missing (e.g. from a module that didn't set it), fill with now
+        all_bets['Date_Generated'] = datetime.now().strftime('%Y-%m-%d')
+        
+        # Ensure Date column exists
         if 'Date' not in all_bets.columns:
             all_bets['Date'] = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
         else:
             all_bets['Date'] = all_bets['Date'].fillna(datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ'))
             
-        all_bets['Date_Generated'] = datetime.now().strftime('%Y-%m-%d')
-        
         # Initialize Status Columns
         all_bets['Result'] = 'Pending'
         all_bets['Profit'] = 0.0
@@ -386,9 +390,7 @@ def run_backend_analysis():
         send_discord_alert(all_bets)
     else:
         print("\nNo value bets found.")
-        # Save empty file with correct headers
-        cols = ['Date', 'Date_Generated', 'Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info', 'Result', 'Profit', 'Score']
-        pd.DataFrame(columns=cols).to_csv('latest_bets.csv', index=False)
+        pd.DataFrame(columns=['Date', 'Date_Generated', 'Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info', 'Result', 'Profit', 'Score']).to_csv('latest_bets.csv', index=False)
         send_discord_alert(pd.DataFrame())
 
 if __name__ == "__main__":
