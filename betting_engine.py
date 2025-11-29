@@ -1,6 +1,6 @@
 # betting_engine.py
-# The Core Logic: AI Models, Data Fetching, Settlement, Feature Engineering, and RL
-# v60.0 - Reinforcement Learning Edition
+# The Core Logic: AI Models, Data Fetching, Settlement, and Feature Engineering
+# v60.0 - Restored Pythagorean Expectation & Zero-Inflated Poisson
 
 import pandas as pd
 import numpy as np
@@ -18,7 +18,7 @@ from nba_api.stats.endpoints import leaguedashteamstats
 import requests
 from bs4 import BeautifulSoup
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import json
 import random
@@ -27,49 +27,24 @@ from textblob import TextBlob
 import config
 
 # ==============================================================================
-# 1. REINFORCEMENT LEARNING MODULE (Thompson Sampling)
+# 1. SMART MATH MODULES (RESTORED)
 # ==============================================================================
-RL_STATE_FILE = 'rl_state.json'
+def calculate_pythagorean_expectation(points_for, points_against, exponent=1.7):
+    """
+    Calculates 'True' win percentage based on points scored/allowed.
+    Exponent 1.7 is standard for Soccer.
+    """
+    if points_for == 0 and points_against == 0: return 0.5
+    return (points_for ** exponent) / ((points_for ** exponent) + (points_against ** exponent))
 
-class RLPortfolioManager:
-    def __init__(self):
-        self.models = ['alpha', 'bravo', 'charlie', 'delta']
-        self.state = self.load_state()
-
-    def load_state(self):
-        if os.path.exists(RL_STATE_FILE):
-            with open(RL_STATE_FILE, 'r') as f: return json.load(f)
-        # Initial state: 1 win, 1 loss (Beta distribution priors)
-        return {m: {'wins': 1, 'losses': 1} for m in self.models}
-
-    def save_state(self):
-        with open(RL_STATE_FILE, 'w') as f: json.dump(self.state, f)
-
-    def update_rewards(self, winning_model_names):
-        """
-        Called during settlement.
-        If Model Alpha predicted the winner, it gets a reward.
-        """
-        for model in self.models:
-            if model in winning_model_names:
-                self.state[model]['wins'] += 1
-            else:
-                self.state[model]['losses'] += 1
-        self.save_state()
-
-    def get_weights(self):
-        """
-        Uses Thompson Sampling to generate dynamic weights based on performance.
-        """
-        samples = {}
-        for model in self.models:
-            # Sample from Beta distribution based on history
-            # This balances Exploitation (using best model) vs Exploration
-            samples[model] = np.random.beta(self.state[model]['wins'], self.state[model]['losses'])
-        
-        # Normalize to sum to 1.0
-        total = sum(samples.values())
-        return {k: v / total for k, v in samples.items()}
+def zero_inflated_poisson(k, lam, pi=0.05):
+    """
+    Adjusted Poisson for low-scoring soccer games (0-0 draws).
+    """
+    if k == 0:
+        return pi + (1 - pi) * poisson.pmf(0, lam)
+    else:
+        return (1 - pi) * poisson.pmf(k, lam)
 
 # ==============================================================================
 # 2. GENETIC AI & MODELS
@@ -148,6 +123,7 @@ def find_arbitrage(game, sport_type):
                 if name == game['home_team'] and price > best_home['price']: best_home = {'price': price, 'book': bookmaker['title']}
                 elif name == game['away_team'] and price > best_away['price']: best_away = {'price': price, 'book': bookmaker['title']}
                 elif name == 'Draw' and price > best_draw['price']: best_draw = {'price': price, 'book': bookmaker['title']}
+    
     implied_prob = 0; arb_info = None
     if sport_type == 'Soccer':
         if best_home['price'] > 0 and best_away['price'] > 0 and best_draw['price'] > 0:
@@ -157,6 +133,7 @@ def find_arbitrage(game, sport_type):
         if best_home['price'] > 0 and best_away['price'] > 0:
             implied_prob = (1/best_home['price']) + (1/best_away['price'])
             if implied_prob < 1.0: arb_info = f"Home: {best_home['book']} ({best_home['price']}) | Away: {best_away['book']} ({best_away['price']})"
+    
     if arb_info: return (1 - implied_prob) / implied_prob, arb_info, best_home, best_draw, best_away
     return 0, None, best_home, best_draw, best_away
 
@@ -181,35 +158,66 @@ def get_news_alert(team1, team2):
     return None
 
 # ==============================================================================
-# 4. SPORT MODULES
+# 4. GLOBAL SOCCER MODULE (Pythagorean + Zero-Inflated Poisson)
 # ==============================================================================
 def calculate_soccer_features(df):
     teams = pd.concat([df['HomeTeam'], df['AwayTeam']]).unique(); elo_ratings = {team: 1500 for team in teams}; k_factor = 20; home_elos, away_elos = [], []; team_variance = {team: [] for team in teams}
+    
+    # NEW: Pythagorean Tracking
+    team_goals_for = {team: 0 for team in teams}
+    team_goals_against = {team: 0 for team in teams}
+    home_pyth, away_pyth = [], []
+
     for i, row in df.iterrows():
-        h, a = row['HomeTeam'], row['AwayTeam']; r_h, r_a = elo_ratings.get(h, 1500), elo_ratings.get(a, 1500); home_elos.append(r_h); away_elos.append(r_a)
+        h, a = row['HomeTeam'], row['AwayTeam']
+        
+        # Elo
+        r_h, r_a = elo_ratings.get(h, 1500), elo_ratings.get(a, 1500)
+        home_elos.append(r_h); away_elos.append(r_a)
         e_h = 1 / (1 + 10**((r_a - r_h) / 400)); s_h = 1 if row['FTR'] == 'H' else 0 if row['FTR'] == 'A' else 0.5
         error = (s_h - e_h)**2; team_variance[h].append(error); team_variance[a].append(error)
         elo_ratings[h] += k_factor * (s_h - e_h); elo_ratings[a] += k_factor * ((1-s_h) - (1-e_h))
+        
+        # Pythagorean
+        h_py = calculate_pythagorean_expectation(team_goals_for[h], team_goals_against[h])
+        a_py = calculate_pythagorean_expectation(team_goals_for[a], team_goals_against[a])
+        home_pyth.append(h_py); away_pyth.append(a_py)
+        
+        # Update Goals
+        team_goals_for[h] += row['FTHG']; team_goals_against[h] += row['FTAG']
+        team_goals_for[a] += row['FTAG']; team_goals_against[a] += row['FTHG']
+
     df['HomeElo'], df['AwayElo'] = home_elos, away_elos
+    df['HomePyth'], df['AwayPyth'] = home_pyth, away_pyth
     volatility_map = {t: np.std(v[-10:]) if len(v) > 10 else 0.25 for t, v in team_variance.items()}
-    return df, elo_ratings, volatility_map
+    
+    return df, elo_ratings, volatility_map, team_goals_for, team_goals_against
 
 def train_league_brain(div_code):
     seasons = ['2324', '2223', '2122']; 
     try: df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/{div_code}.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
     except: return None, None
     if df.empty: return None, None
-    df, elo_ratings, volatility_map = calculate_soccer_features(df)
+    
+    df, elo_ratings, volatility_map, gf, ga = calculate_soccer_features(df)
+    
     h_stats = df[['Date', 'HomeTeam', 'FTR']].rename(columns={'HomeTeam': 'Team'}); h_stats['Points'] = h_stats['FTR'].map({'H': 3, 'D': 1, 'A': 0})
     a_stats = df[['Date', 'AwayTeam', 'FTR']].rename(columns={'AwayTeam': 'Team'}); a_stats['Points'] = a_stats['FTR'].map({'A': 3, 'D': 1, 'H': 0})
     all_stats = pd.concat([h_stats, a_stats]).sort_values('Date'); all_stats['Form_EWMA'] = all_stats.groupby('Team')['Points'].transform(lambda x: x.ewm(span=5, adjust=False).mean().shift(1))
     df = pd.merge(df, all_stats[['Date', 'Team', 'Form_EWMA']], left_on=['Date', 'HomeTeam'], right_on=['Date', 'Team'], how='left').rename(columns={'Form_EWMA': 'HomeForm'})
     df = pd.merge(df, all_stats[['Date', 'Team', 'Form_EWMA']], left_on=['Date', 'AwayTeam'], right_on=['Date', 'Team'], how='left').rename(columns={'Form_EWMA': 'AwayForm'})
+    
     df.dropna(subset=['B365H', 'B365D', 'B365A', 'HomeForm', 'AwayForm'], inplace=True)
-    df['elo_diff'] = df['HomeElo'] - df['AwayElo']; df['form_diff'] = df['HomeForm'] - df['AwayForm']
-    features = ['elo_diff', 'form_diff']; X, y = df[features], df['FTR']
+    df['elo_diff'] = df['HomeElo'] - df['AwayElo']
+    df['form_diff'] = df['HomeForm'] - df['AwayForm']
+    df['pyth_diff'] = df['HomePyth'] - df['AwayPyth'] # NEW FEATURE
+    
+    features = ['elo_diff', 'form_diff', 'pyth_diff']
+    X, y = df[features], df['FTR']
     le = LabelEncoder(); y_encoded = le.fit_transform(y); scaler = StandardScaler(); X_scaled = scaler.fit_transform(X)
+    
     living_model, meta_model = evolve_and_train(X_scaled, y_encoded)
+    
     avg_goals_home = df['FTHG'].mean(); avg_goals_away = df['FTAG'].mean()
     home_strength = df.groupby('HomeTeam').agg({'FTHG': 'mean', 'FTAG': 'mean'}).rename(columns={'FTHG': 'h_gf_avg', 'FTAG': 'h_ga_avg'})
     away_strength = df.groupby('AwayTeam').agg({'FTAG': 'mean', 'FTHG': 'mean'}).rename(columns={'FTAG': 'a_gf_avg', 'FTHG': 'a_ga_avg'})
@@ -217,10 +225,7 @@ def train_league_brain(div_code):
     team_strengths['attack'] = (team_strengths['h_gf_avg'] / avg_goals_home + team_strengths['a_gf_avg'] / avg_goals_away) / 2
     team_strengths['defence'] = (team_strengths['h_ga_avg'] / avg_goals_away + team_strengths['a_ga_avg'] / avg_goals_home) / 2
     
-    # Initialize RL Manager
-    rl_manager = RLPortfolioManager()
-    
-    return {'model': living_model, 'meta_model': meta_model, 'le': le, 'scaler': scaler, 'elo_ratings': elo_ratings, 'volatility': volatility_map, 'team_strengths': team_strengths, 'avgs': (avg_goals_home, avg_goals_away), 'rl': rl_manager}, df
+    return {'model': living_model, 'meta_model': meta_model, 'le': le, 'scaler': scaler, 'elo_ratings': elo_ratings, 'volatility': volatility_map, 'team_strengths': team_strengths, 'avgs': (avg_goals_home, avg_goals_away), 'gf': gf, 'ga': ga}, df
 
 def run_global_soccer_module():
     print("--- Running Global Soccer Module (Big 5 + UCL) ---"); bets = []
@@ -238,9 +243,15 @@ def run_global_soccer_module():
                 model_home = fuzzy_match_team(game['home_team'], list(brain['elo_ratings'].keys())); model_away = fuzzy_match_team(game['away_team'], list(brain['elo_ratings'].keys()))
                 if model_home and model_away:
                     h_elo, a_elo = brain['elo_ratings'].get(model_home, 1500), brain['elo_ratings'].get(model_away, 1500)
+                    
+                    # Pythagorean Calculation for Live Game
+                    h_py = calculate_pythagorean_expectation(brain['gf'].get(model_home, 0), brain['ga'].get(model_home, 0))
+                    a_py = calculate_pythagorean_expectation(brain['gf'].get(model_away, 0), brain['ga'].get(model_away, 0))
+                    
                     try: h_form = historical_df[historical_df['HomeTeam'] == model_home].sort_values('Date').iloc[-1]['HomeForm']; a_form = historical_df[historical_df['AwayTeam'] == model_away].sort_values('Date').iloc[-1]['AwayForm']
                     except: h_form, a_form = 1.5, 1.5
-                    feat_scaled = brain['scaler'].transform(pd.DataFrame([{'elo_diff': h_elo - a_elo, 'form_diff': h_form - a_form}]))
+                    
+                    feat_scaled = brain['scaler'].transform(pd.DataFrame([{'elo_diff': h_elo - a_elo, 'form_diff': h_form - a_form, 'pyth_diff': h_py - a_py}]))
                     probs_alpha = brain['model'].predict_proba(feat_scaled)[0]
                     
                     if brain['meta_model']:
@@ -251,27 +262,14 @@ def run_global_soccer_module():
                         avg_goals_home, avg_goals_away = brain['avgs']; team_strengths = brain['team_strengths']
                         h_att, a_def = team_strengths.loc[model_home]['attack'], team_strengths.loc[model_away]['defence']; a_att, h_def = team_strengths.loc[model_away]['attack'], team_strengths.loc[model_home]['defence']
                         exp_h, exp_a = h_att * a_def * avg_goals_home, a_att * h_def * avg_goals_away
-                        pm = np.array([[poisson.pmf(i, exp_h) * poisson.pmf(j, exp_a) for j in range(6)] for i in range(6)])
+                        
+                        # Zero-Inflated Poisson
+                        pm = np.array([[zero_inflated_poisson(i, exp_h) * zero_inflated_poisson(j, exp_a) for j in range(6)] for i in range(6)])
                         p_h, p_d, p_a = np.sum(np.tril(pm, -1)), np.sum(np.diag(pm)), np.sum(np.triu(pm, 1))
                     except: p_h, p_d, p_a = 0.33, 0.33, 0.33
-                    
-                    # *** RL WEIGHTING ***
-                    rl_weights = brain['rl'].get_weights()
-                    # Simplified: Alpha gets 'alpha' weight, Poisson gets 'bravo' weight
-                    w_alpha = rl_weights.get('alpha', 0.5) + rl_weights.get('charlie', 0.0) + rl_weights.get('delta', 0.0) # Grouping for simplicity
-                    w_bravo = rl_weights.get('bravo', 0.5)
-                    
-                    final_probs = {
-                        'Home Win': probs_alpha[brain['le'].transform(['H'])[0]] * w_alpha + p_h * w_bravo,
-                        'Draw': probs_alpha[brain['le'].transform(['D'])[0]] * w_alpha + p_d * w_bravo,
-                        'Away Win': probs_alpha[brain['le'].transform(['A'])[0]] * w_alpha + p_a * w_bravo
-                    }
-                    
-                    # Normalize
-                    total = sum(final_probs.values())
-                    final_probs = {k: v/total for k,v in final_probs.items()}
-                    
+                    final_probs = {'Home Win': probs_alpha[brain['le'].transform(['H'])[0]] * 0.7 + p_h * 0.3, 'Draw': probs_alpha[brain['le'].transform(['D'])[0]] * 0.7 + p_d * 0.3, 'Away Win': probs_alpha[brain['le'].transform(['A'])[0]] * 0.7 + p_a * 0.3}
                     h_vol = brain['volatility'].get(model_home, 0.25); a_vol = brain['volatility'].get(model_away, 0.25); vol_factor = 1.0 - ((h_vol + a_vol)/2 - 0.25)
+                    
                     for outcome, odds_data in [('Home Win', bh), ('Draw', bd), ('Away Win', ba)]:
                         if odds_data['price'] > 0:
                             edge = (final_probs[outcome] * odds_data['price']) - 1
@@ -357,10 +355,6 @@ def settle_bets():
                         won = (row['Bet'] == 'Home Win' and res == 'H') or (row['Bet'] == 'Draw' and res == 'D') or (row['Bet'] == 'Away Win' and res == 'A')
                         df.at[idx, 'Result'] = 'Win' if won else 'Loss'
                         df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1) if won else -row['Stake']
-                        
-                        # *** RL FEEDBACK LOOP ***
-                        # If we have a brain loaded (this is tricky in a script, but conceptually:)
-                        # rl_manager.update_rewards(['alpha'] if won else []) 
                 except: continue
         except: pass
     df.to_csv(history_file, index=False)
