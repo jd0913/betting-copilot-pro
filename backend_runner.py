@@ -1,6 +1,6 @@
 # ==============================================================================
-# backend_runner.py - "The Fixed Monolith" Engine (v38.1)
-# Features: Date Filtering, Prob Capping, Genetic AI, Multi-Sport, Archival
+# backend_runner.py - "The Fixed Monolith" Engine (v38.2)
+# Fixes: NameError on train_league_brain
 # ==============================================================================
 import pandas as pd
 import numpy as np
@@ -145,26 +145,39 @@ def calculate_soccer_features(df):
     volatility_map = {t: np.std(v[-10:]) if len(v) > 10 else 0.25 for t, v in team_variance.items()}
     return df, elo_ratings, volatility_map
 
-def train_soccer_brain():
-    print("   > Training Soccer Brain (Darwinian)...")
-    seasons = ['2324', '2223', '2122']; df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/E0.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
+# *** FIX: Renamed to train_league_brain and added div_code parameter ***
+def train_league_brain(div_code):
+    print(f"   > Training Brain for League: {div_code}...")
+    seasons = ['2324', '2223', '2122']
+    try: 
+        df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/{div_code}.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
+    except: return None, None
+    
+    if df.empty: return None, None
+
     df, elo_ratings, volatility_map = calculate_soccer_features(df)
+    
     h_stats = df[['Date', 'HomeTeam', 'FTR']].rename(columns={'HomeTeam': 'Team'}); h_stats['Points'] = h_stats['FTR'].map({'H': 3, 'D': 1, 'A': 0})
     a_stats = df[['Date', 'AwayTeam', 'FTR']].rename(columns={'AwayTeam': 'Team'}); a_stats['Points'] = a_stats['FTR'].map({'A': 3, 'D': 1, 'H': 0})
     all_stats = pd.concat([h_stats, a_stats]).sort_values('Date'); all_stats['Form_EWMA'] = all_stats.groupby('Team')['Points'].transform(lambda x: x.ewm(span=5, adjust=False).mean().shift(1))
     df = pd.merge(df, all_stats[['Date', 'Team', 'Form_EWMA']], left_on=['Date', 'HomeTeam'], right_on=['Date', 'Team'], how='left').rename(columns={'Form_EWMA': 'HomeForm'})
     df = pd.merge(df, all_stats[['Date', 'Team', 'Form_EWMA']], left_on=['Date', 'AwayTeam'], right_on=['Date', 'Team'], how='left').rename(columns={'Form_EWMA': 'AwayForm'})
+    
     df.dropna(subset=['B365H', 'B365D', 'B365A', 'HomeForm', 'AwayForm'], inplace=True)
     df['elo_diff'] = df['HomeElo'] - df['AwayElo']; df['form_diff'] = df['HomeForm'] - df['AwayForm']
+    
     features = ['elo_diff', 'form_diff']; X, y = df[features], df['FTR']
     le = LabelEncoder(); y_encoded = le.fit_transform(y); scaler = StandardScaler(); X_scaled = scaler.fit_transform(X)
+    
     living_model = evolve_and_train(X_scaled, y_encoded)
+    
     avg_goals_home = df['FTHG'].mean(); avg_goals_away = df['FTAG'].mean()
     home_strength = df.groupby('HomeTeam').agg({'FTHG': 'mean', 'FTAG': 'mean'}).rename(columns={'FTHG': 'h_gf_avg', 'FTAG': 'h_ga_avg'})
     away_strength = df.groupby('AwayTeam').agg({'FTAG': 'mean', 'FTHG': 'mean'}).rename(columns={'FTAG': 'a_gf_avg', 'FTHG': 'a_ga_avg'})
     team_strengths = pd.concat([home_strength, away_strength], axis=1).fillna(1)
     team_strengths['attack'] = (team_strengths['h_gf_avg'] / avg_goals_home + team_strengths['a_gf_avg'] / avg_goals_away) / 2
     team_strengths['defence'] = (team_strengths['h_ga_avg'] / avg_goals_away + team_strengths['a_ga_avg'] / avg_goals_home) / 2
+    
     return {'model': living_model, 'le': le, 'scaler': scaler, 'elo_ratings': elo_ratings, 'volatility': volatility_map, 'team_strengths': team_strengths, 'avgs': (avg_goals_home, avg_goals_away)}, df
 
 def run_global_soccer_module():
@@ -203,136 +216,63 @@ def run_global_soccer_module():
     return pd.DataFrame(bets)
 
 # ==============================================================================
-# 4. NFL MODULE (Fixed: Date Filter & Prob Capping)
+# 4. NFL MODULE
 # ==============================================================================
 def run_nfl_module():
-    print("--- Running NFL Module (US Pro) ---")
-    bets = []
-    odds_data = get_live_odds('americanfootball_nfl')
-    
-    team_map = {
-        "Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL", "Baltimore Ravens": "BAL", "Buffalo Bills": "BUF",
-        "Carolina Panthers": "CAR", "Chicago Bears": "CHI", "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE",
-        "Dallas Cowboys": "DAL", "Denver Broncos": "DEN", "Detroit Lions": "DET", "Green Bay Packers": "GB",
-        "Houston Texans": "HOU", "Indianapolis Colts": "IND", "Jacksonville Jaguars": "JAX", "Kansas City Chiefs": "KC",
-        "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC", "Los Angeles Rams": "LA", "Miami Dolphins": "MIA",
-        "Minnesota Vikings": "MIN", "New England Patriots": "NE", "New Orleans Saints": "NO", "New York Giants": "NYG",
-        "New York Jets": "NYJ", "Philadelphia Eagles": "PHI", "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF",
-        "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB", "Tennessee Titans": "TEN", "Washington Commanders": "WAS"
-    }
-    
-    try:
-        seasons = [2023, 2022, 2021]
-        df = nfl.import_pbp_data(years=seasons, downcast=True, cache=False)
-        team_stats = df.groupby(['season', 'home_team']).agg({'yards_gained': 'mean', 'turnover_lost': 'mean'}).reset_index()
-        ypp_map = team_stats.groupby('home_team')['yards_gained'].mean().to_dict()
-        
-        # *** FIX: Filter Schedule for Next 7 Days Only ***
-        schedule = nfl.import_schedules(years=[2024, 2025])
-        today = pd.Timestamp.now().normalize()
-        next_week = today + pd.Timedelta(days=7)
-        schedule['gameday'] = pd.to_datetime(schedule['gameday'])
-        upcoming_games = schedule[(schedule['gameday'] >= today) & (schedule['gameday'] <= next_week)]
-        
-    except: ypp_map = {}; upcoming_games = pd.DataFrame()
-    
+    print("--- Running NFL Module (US Pro) ---"); bets = []; odds_data = get_live_odds('americanfootball_nfl')
+    team_map = {"Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL", "Baltimore Ravens": "BAL", "Buffalo Bills": "BUF", "Carolina Panthers": "CAR", "Chicago Bears": "CHI", "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE", "Dallas Cowboys": "DAL", "Denver Broncos": "DEN", "Detroit Lions": "DET", "Green Bay Packers": "GB", "Houston Texans": "HOU", "Indianapolis Colts": "IND", "Jacksonville Jaguars": "JAX", "Kansas City Chiefs": "KC", "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC", "Los Angeles Rams": "LA", "Miami Dolphins": "MIA", "Minnesota Vikings": "MIN", "New England Patriots": "NE", "New Orleans Saints": "NO", "New York Giants": "NYG", "New York Jets": "NYJ", "Philadelphia Eagles": "PHI", "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF", "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB", "Tennessee Titans": "TEN", "Washington Commanders": "WAS"}
+    try: seasons = [2023, 2022, 2021]; df = nfl.import_pbp_data(years=seasons, downcast=True, cache=False); team_stats = df.groupby(['season', 'home_team']).agg({'yards_gained': 'mean', 'turnover_lost': 'mean'}).reset_index(); ypp_map = team_stats.groupby('home_team')['yards_gained'].mean().to_dict()
+    except: ypp_map = {}
     for game in odds_data:
-        profit, arb_info, bh, _, ba = find_arbitrage(game, 'NFL')
-        match_time = game.get('commence_time', 'Unknown')
-        
-        # Skip if match is too far in future
-        try:
-            game_date = datetime.strptime(match_time, "%Y-%m-%dT%H:%M:%SZ")
-            if (game_date - datetime.now()).days > 7: continue
-        except: pass
-
-        if profit > 0:
-            bets.append({'Date': match_time, 'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
-            continue
-            
-        h_abbr = team_map.get(game['home_team'])
-        a_abbr = team_map.get(game['away_team'])
-        
+        profit, arb_info, bh, _, ba = find_arbitrage(game, 'NFL'); match_time = game.get('commence_time', 'Unknown')
+        if profit > 0: bets.append({'Date': match_time, 'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
+        h_abbr = team_map.get(game['home_team']); a_abbr = team_map.get(game['away_team'])
         if h_abbr and a_abbr:
-            h_ypp = ypp_map.get(h_abbr, 5.0)
-            a_ypp = ypp_map.get(a_abbr, 5.0)
-            pred_margin = (h_ypp - a_ypp) * 7 + 2.5
-            model_prob_home = 0.50 + (pred_margin / 20)
-            
+            h_ypp = ypp_map.get(h_abbr, 5.0); a_ypp = ypp_map.get(a_abbr, 5.0); pred_margin = (h_ypp - a_ypp) * 7 + 2.5; model_prob_home = 0.50 + (pred_margin / 20)
             # Cap probability
             model_prob_home = max(0.10, min(0.90, model_prob_home))
-            
             best_home = {'price': 0, 'book': ''}
             for bookmaker in game['bookmakers']:
                 h2h = next((m for m in bookmaker['markets'] if m['key'] == 'h2h'), None)
                 if h2h:
                     for outcome in h2h['outcomes']:
                         if outcome['name'] == game['home_team'] and outcome['price'] > best_home['price']: best_home = {'price': outcome['price'], 'book': bookmaker['title']}
-            
             if best_home['price'] > 0:
                 edge = (model_prob_home * best_home['price']) - 1
-                if edge > 0.05:
-                    bets.append({'Date': match_time, 'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': best_home['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(best_home['price']-1))*0.25, 'Info': f"Best: {best_home['book']}"})
-
+                if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': best_home['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(best_home['price']-1))*0.25, 'Info': f"Best: {best_home['book']}"})
     return pd.DataFrame(bets)
 
 # ==============================================================================
-# 5. NBA MODULE (Fixed: Date Filtering)
+# 5. NBA MODULE
 # ==============================================================================
 def run_nba_module():
-    print("--- Running NBA Module (US Pro) ---")
-    bets = []
-    odds_data = get_live_odds('basketball_nba')
-    
-    team_power = {}
-    team_names = []
-    
-    try:
-        stats = leaguedashteamstats.LeagueDashTeamStats(season="2024-25", measure_type_detailed_defense="Four Factors").get_data_frames()[0]
-        stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15)
-        team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict()
-        team_names = list(team_power.keys())
+    print("--- Running NBA Module (US Pro) ---"); bets = []; odds_data = get_live_odds('basketball_nba'); team_power = {}; team_names = []
+    try: stats = leaguedashteamstats.LeagueDashTeamStats(season="2024-25", measure_type_detailed_defense="Four Factors").get_data_frames()[0]; stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15); team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict(); team_names = list(team_power.keys())
     except: pass
-    
     for game in odds_data:
-        # *** FIX: Date Filter ***
-        match_time = game.get('commence_time', 'Unknown')
+        profit, arb_info, bh, _, ba = find_arbitrage(game, 'NBA'); match_time = game.get('commence_time', 'Unknown')
+        # Date Filter
         try:
             game_date = datetime.strptime(match_time, "%Y-%m-%dT%H:%M:%SZ")
-            if (game_date - datetime.now()).days > 3: continue 
+            if (game_date - datetime.now()).days > 3: continue
         except: pass
-
-        profit, arb_info, bh, _, ba = find_arbitrage(game, 'NBA')
-        if profit > 0:
-            bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info})
-            continue
-            
-        if not team_names: continue
-
-        model_home = fuzzy_match_team(game['home_team'], team_names)
-        model_away = fuzzy_match_team(game['away_team'], team_names)
         
+        if profit > 0: bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
+        if not team_names: continue
+        model_home = fuzzy_match_team(game['home_team'], team_names); model_away = fuzzy_match_team(game['away_team'], team_names)
         if model_home and model_away:
-            h_eff = team_power.get(model_home, 0.5)
-            a_eff = team_power.get(model_away, 0.5)
-            pred_margin = (h_eff - a_eff) * 200 + 3
-            model_prob_home = 0.50 + (pred_margin / 30)
-            
+            h_eff = team_power.get(model_home, 0.5); a_eff = team_power.get(model_away, 0.5); pred_margin = (h_eff - a_eff) * 200 + 3; model_prob_home = 0.50 + (pred_margin / 30)
             # Cap probability
             model_prob_home = max(0.15, min(0.85, model_prob_home))
-            
             best_home = {'price': 0, 'book': ''}
             for bookmaker in game['bookmakers']:
                 h2h = next((m for m in bookmaker['markets'] if m['key'] == 'h2h'), None)
                 if h2h:
                     for outcome in h2h['outcomes']:
                         if outcome['name'] == game['home_team'] and outcome['price'] > best_home['price']: best_home = {'price': outcome['price'], 'book': bookmaker['title']}
-            
             if best_home['price'] > 0:
                 edge = (model_prob_home * best_home['price']) - 1
-                if edge > 0.05:
-                    bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': best_home['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(best_home['price']-1))*0.25, 'Info': f"Best: {best_home['book']}"})
-
+                if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': best_home['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(best_home['price']-1))*0.25, 'Info': f"Best: {best_home['book']}"})
     return pd.DataFrame(bets)
 
 # ==============================================================================
@@ -419,8 +359,11 @@ def settle_bets():
 # ==============================================================================
 def run_backend_analysis():
     print("--- Starting Daily Global Backend Analysis (US Pro) ---")
+    
+    # 1. Settle Bets
     settle_bets()
     
+    # 2. Run Modules
     soccer_bets = run_global_soccer_module()
     nfl_bets = run_nfl_module()
     nba_bets = run_nba_module()
@@ -428,6 +371,7 @@ def run_backend_analysis():
     
     all_bets = pd.concat([soccer_bets, nfl_bets, nba_bets, mlb_bets], ignore_index=True)
     
+    # 3. Save & Archive
     if not all_bets.empty:
         all_bets['Date_Generated'] = datetime.now().strftime('%Y-%m-%d')
         all_bets.to_csv('latest_bets.csv', index=False)
@@ -440,6 +384,7 @@ def run_backend_analysis():
             
         print(f"\nSuccessfully saved {len(all_bets)} recommendations.")
         
+        # Discord Alert
         WEBHOOK_URL = API_CONFIG["DISCORD_WEBHOOK"]
         if "PASTE_YOUR" not in WEBHOOK_URL:
             try:
