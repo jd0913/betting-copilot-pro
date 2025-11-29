@@ -6,7 +6,7 @@ joblib
 tqdm
 matplotlib
 streamlit
-streamlit_option_menu        # ← THIS IS THE REAL NAME (underscores, no hyphen)
+streamlit-option-menu        # ← HYPHEN, NOT UNDERSCORE — THIS IS THE REAL NAME
 plotly
 requests
 beautifulsoup4
