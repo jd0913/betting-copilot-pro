@@ -29,7 +29,10 @@ st.sidebar.title("Navigation")
 # Global Settings
 st.sidebar.header("💰 Bankroll")
 bankroll = st.sidebar.number_input("Bankroll ($)", value=1000, step=100)
-kelly_multiplier = st.sidebar.slider("Kelly Multiplier", 0.1, 1.0, 0.25, help="Recommended: 0.25")
+
+# Hardcoded Professional Standard (Quarter Kelly)
+# This protects users from over-betting without them knowing.
+kelly_multiplier = 0.25
 
 st.sidebar.markdown("---")
 
