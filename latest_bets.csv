@@ -27,11 +27,5 @@ Date,Sport,League,Match,Bet Type,Bet,Odds,Edge,Confidence,Stake,Info,Date_Genera
 2025-12-07T21:05:00Z,NFL,NFL,Denver Broncos @ Las Vegas Raiders,Moneyline,Home Win,4.7,1.9375,0.625,0.13091216216216214,Best: FanDuel,2025-11-29
 2025-12-07T21:25:00Z,NFL,NFL,Los Angeles Rams @ Arizona Cardinals,Moneyline,Home Win,5.2,2.25,0.625,0.13392857142857142,Best: FanDuel,2025-11-29
 2025-12-09T01:15:00Z,NFL,NFL,Philadelphia Eagles @ Los Angeles Chargers,Moneyline,Home Win,2.14,0.33750000000000013,0.625,0.07401315789473686,Best: DraftKings,2025-11-29
-2025-11-29T00:40:00Z,NBA,NBA,Philadelphia 76ers @ Brooklyn Nets,Moneyline,Home Win,11.0,4.910666666666666,0.5373333333333332,0.12276666666666665,Best: DraftKings,2025-11-29
-2025-11-29T00:40:00Z,NBA,NBA,Chicago Bulls @ Charlotte Hornets,ARBITRAGE,ALL,0.0,0.014349775784753398,1.0,0.0,Home: BetRivers (1.56) | Away: FanDuel (2.9),2025-11-29
-2025-11-29T00:41:00Z,NBA,NBA,Cleveland Cavaliers @ Atlanta Hawks,ARBITRAGE,ALL,0.0,0.011570247933884255,1.0,0.0,Home: MyBookie.ag (3.4) | Away: Bovada (1.44),2025-11-29
-2025-11-29T00:41:00Z,NBA,NBA,Washington Wizards @ Indiana Pacers,ARBITRAGE,ALL,0.0,0.04801512287334599,1.0,0.0,Home: FanDuel (1.44) | Away: BetRivers (3.85),2025-11-29
-2025-11-29T00:43:00Z,NBA,NBA,Milwaukee Bucks @ New York Knicks,ARBITRAGE,ALL,0.0,0.05235849056603763,1.0,0.0,Home: FanDuel (1.94) | Away: MyBookie.ag (2.3),2025-11-29
-2025-11-29T03:10:00Z,NBA,NBA,Memphis Grizzlies @ Los Angeles Clippers,Moneyline,Home Win,1.41,0.10121000000000002,0.781,0.06171341463414637,Best: BetOnline.ag,2025-11-29
-2025-11-30T01:10:00Z,NBA,NBA,Detroit Pistons @ Miami Heat,Moneyline,Home Win,1.68,0.09592000000000023,0.6523333333333334,0.03526470588235303,Best: FanDuel,2025-11-29
-2025-11-30T02:10:00Z,NBA,NBA,Denver Nuggets @ Phoenix Suns,Moneyline,Home Win,3.15,0.8962999999999992,0.6019999999999998,0.10422093023255805,Best: FanDuel,2025-11-29
+2025-11-29T00:41:00Z,NBA,NBA,Orlando Magic @ Detroit Pistons,ARBITRAGE,ALL,0.0,0.0538975501113586,1.0,0.0,Home: DraftKings (1.69) | Away: MyBookie.ag (2.8),2025-11-29
+2025-11-29T00:43:00Z,NBA,NBA,Milwaukee Bucks @ New York Knicks,ARBITRAGE,ALL,0.0,0.016494845360824628,1.0,0.0,Home: MyBookie.ag (1.45) | Away: BetMGM (3.4),2025-11-29
