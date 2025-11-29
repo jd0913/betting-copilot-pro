@@ -17,7 +17,7 @@ def _load_csv_safely(url):
         numeric_cols = ['Edge', 'Confidence', 'Odds', 'Stake', 'Profit']
         for col in numeric_cols:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
         if 'Date' in df.columns:
             df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce')
             df['Formatted_Date'] = df['Date_Obj'].dt.strftime('%a, %b %d • %I:%M %p').fillna('Time TBD')
@@ -45,17 +45,23 @@ def get_performance_stats(history_df):
     settled = history_df[history_df['Result'].isin(['Win', 'Loss'])].copy()
     if settled.empty:
         return {"win_rate": 0.0, "roi": 0.0, "total_bets": 0, "profit": 0.0, "sport_stats": {}}
+    
     wins = len(settled[settled['Result'] == 'Win'])
     total = len(settled)
     profit = settled['Profit'].sum()
-    total_staked = settled['Stake'].sum() or total
+    total_staked = settled['Stake'].sum()
+    if total_staked == 0:
+        total_staked = total
+    
     win_rate = wins / total if total > 0 else 0.0
     roi = profit / total_staked if total_staked > 0 else 0.0
+    
     sport_stats = {}
     if 'Sport' in settled.columns:
         for sport in settled['Sport'].unique():
             s = settled[settled['Sport'] == sport]
             sport_stats[sport] = len(s[s['Result'] == 'Win']) / len(s) if len(s) > 0 else 0.0
+    
     return {
         "win_rate": round(win_rate, 3),
         "roi": round(roi, 4),
@@ -70,11 +76,11 @@ def inject_custom_css():
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
         html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
         .gradient-text { background: linear-gradient(90deg, #00C9FF, #92FE9D); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; font-size: 3.2em; }
-        .bet-card, .bet-ticket { background: rgba(30, 33, 48, 0.6); border-radius: 12px; padding: 16px; margin: 10px 0; border: 1px solid #333; }
-        .odds-box { background: #00e676; color: black; font-weight: 800; padding: 10px 20px; border-radius: 8px; font-size: 1.4em; }
-        .badge-arb { background: linear-gradient(90deg, #00C9FF, #92FE9D); color: black; padding: 4px 10px; border-radius: 6px; font-weight: bold; }
-        .badge-high { background: #ff4444; color: white; padding: 4px 10px; border-radius: 6px; }
-        .badge-safe { background: #00e676; color: black; padding: 4px 10px; border-radius: 6px; }
+        .bet-card, .bet-ticket { background: rgba(30, 33, 48, 0.8); border-radius: 12px; padding: 16px; margin: 10px 0; border: 1px solid rgba(255,255,255,0.1); }
+        .odds-box { background: linear-gradient(90deg, #00e676, #00c853); color: black; font-weight: 800; padding: 12px 24px; border-radius: 10px; font-size: 1.5em; }
+        .badge-arb { background: linear-gradient(90deg, #00C9FF, #92FE9D); color: black; padding: 6px 12px; border-radius: 8px; font-weight: bold; }
+        .badge-high { background: #ff1744; color: white; padding: 6px 12px; border-radius: 8px; }
+        .badge-safe { background: #00e676; color: black; padding: 6px 12px; border-radius: 8px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -88,4 +94,11 @@ def get_risk_badge(row):
         return '<span class="badge-high">HIGH RISK</span>'
     if row.get('Confidence', 0) > 0.60 and row.get('Edge', 0) > 0.05:
         return '<span class="badge-safe">ANCHOR</span>'
-    return '<span style="background:#31333F;color:#ccc;padding:4px 10px;border-radius:6px;">VALUE</span>'
+    return '<span style="background:#31333F;color:#ccc;padding:6px 12px;border-radius:8px;">VALUE</span>'
+
+def format_result_badge(result):
+    if result == 'Win': return '<span style="background:#c8e6c9;color:#1b5e20;padding:4px 10px;border-radius:6px;font-weight:bold;">WIN</span>'
+    elif result == 'Loss': return '<span style="background:#ffcdd2;color:#c62828;padding:4px 10px;border-radius:6px;font-weight:bold;">LOSS</span>'
+    elif result == 'Push': return '<span style="background:#e0e0e0;color:#424242;padding:4px 10px;border-radius:6px;">PUSH</span>'
+    elif result == 'Pending': return '<span style="color:#ff9800;font-weight:bold;">PENDING</span>'
+    else: return f'<span>{result}</span>'
