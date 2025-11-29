@@ -1,10 +1,10 @@
 # views.py
-# The "Vegas Edition" Layouts (v56.1)
-# Fixes: Added missing numpy import for History page
+# The "Vegas Edition" Layouts (v57.0)
+# Fixes: Smarter Parlay Logic (No Longshots), Clean History
 
 import streamlit as st
 import pandas as pd
-import numpy as np  # <--- THIS WAS MISSING
+import numpy as np
 import plotly.graph_objects as go
 from itertools import combinations
 import utils
@@ -102,27 +102,51 @@ def render_dashboard(bankroll, kelly_multiplier):
                                 if is_in_slip:
                                     st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
 
-        # --- SMART PARLAY BUILDER ---
+        # --- SMART PARLAY BUILDER (RE-ENGINEERED) ---
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
         
-        parlay_candidates = df[df['Odds'] > 1.0]
+        # 1. Filter: Only consider bets with Odds < 2.50 (No Longshots)
+        # 2. Filter: Only consider bets with Confidence > 50% (Probable Winners)
+        # 3. Filter: No Arbitrage bets
+        parlay_candidates = df[
+            (df['Odds'] > 1.1) & 
+            (df['Odds'] < 2.50) & 
+            (df['Confidence'] > 0.50) &
+            (df['Bet Type'] != 'ARBITRAGE')
+        ]
         
         if len(parlay_candidates) >= 2:
-            parlay_legs = parlay_candidates.sort_values('Edge', ascending=False).to_dict('records')
-            best_parlay_edge = -1; best_parlay_combo = None
-            for combo in combinations(parlay_legs[:5], 2): 
+            # Sort by Confidence (Highest probability of hitting)
+            parlay_legs = parlay_candidates.sort_values('Confidence', ascending=False).to_dict('records')
+            
+            best_combo = None
+            
+            # Find the best 2-leg combo from different matches
+            for combo in combinations(parlay_legs[:6], 2): 
                 if combo[0]['Match'] != combo[1]['Match']:
-                    parlay_edge = ((1 + combo[0]['Edge']) * (1 + combo[1]['Edge'])) - 1
-                    if parlay_edge > best_parlay_edge: best_parlay_edge = parlay_edge; best_parlay_combo = combo
-            if best_parlay_combo:
-                total_odds = best_parlay_combo[0]['Odds'] * best_parlay_combo[1]['Odds']
-                st.success(f"🔥 **Top 2-Leg Parlay** | Total Odds: **{total_odds:.2f}** | Combined Edge: **{best_parlay_edge:.2%}**")
-                c1, c2 = st.columns(2)
-                with c1: st.info(f"Leg 1: {best_parlay_combo[0]['Match']} -> {best_parlay_combo[0]['Bet']}")
-                with c2: st.info(f"Leg 2: {best_parlay_combo[1]['Match']} -> {best_parlay_combo[1]['Bet']}")
-            else: st.info("Could not build a valid parlay.")
-        else: st.info("Not enough value bets to build a parlay.")
+                    best_combo = combo
+                    break
+            
+            if best_combo:
+                total_odds = best_combo[0]['Odds'] * best_combo[1]['Odds']
+                combined_prob = best_combo[0]['Confidence'] * best_combo[1]['Confidence']
+                implied_prob = 1 / total_odds
+                parlay_edge = (combined_prob - implied_prob) / implied_prob
+                
+                st.success(f"🛡️ **Bankroll Builder (Safe Double)**")
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total Odds", f"{total_odds:.2f}")
+                c2.metric("True Probability", f"{combined_prob:.1%}")
+                c3.metric("Expected Value", f"{parlay_edge:.1%}")
+                
+                st.info(f"1️⃣ **{best_combo[0]['Match']}** -> {best_combo[0]['Bet']} ({best_combo[0]['Odds']})")
+                st.info(f"2️⃣ **{best_combo[1]['Match']}** -> {best_combo[1]['Bet']} ({best_combo[1]['Odds']})")
+            else:
+                st.info("No safe parlay combinations found (Odds too high or low confidence).")
+        else:
+            st.info("Not enough high-confidence favorites to build a safe parlay.")
 
     elif df == "NO_BETS_FOUND":
         st.success("✅ System Online. Market Scanned. No Value Found.")
@@ -201,7 +225,6 @@ def render_history():
         display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
         
         # Fix Profit Display (Show '-' for pending)
-        # *** FIX: np is now imported ***
         display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
 
         # Rename and Select Columns
@@ -219,4 +242,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v56.1 (Enterprise Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v57.0 (Enterprise Edition)")
