@@ -1,6 +1,6 @@
 # views.py
-# The "Vegas Edition" Layouts (v54.0)
-# Fixes: SyntaxError by cleaning up long HTML strings
+# The "Vegas Edition" Layouts (v55.0)
+# Features: Strategic Parlay Builder (Safe vs Value), Clean History, God Mode UI
 
 import streamlit as st
 import pandas as pd
@@ -61,8 +61,7 @@ def render_dashboard(bankroll, kelly_multiplier):
                 c1, c2 = st.columns([3, 1])
                 
                 with c1:
-                    # Broken down for safety
-                    card_html = f"""
+                    st.markdown(f"""
                     <div class="bet-ticket">
                         <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
                             <span style="color:#8b92a5; font-size:0.8em;">{match_time} • {row.get('League', 'League')}</span>
@@ -82,16 +81,10 @@ def render_dashboard(bankroll, kelly_multiplier):
                             <div><div class="metric-label">STAKE</div><div class="metric-value">${cash_stake:.2f}</div></div>
                         </div>
                     </div>
-                    """
-                    st.markdown(card_html, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
                 
                 with c2:
-                    odds_html = f"""
-                    <div style="height:100%; display:flex; align-items:center; justify-content:center;">
-                        <div class="odds-box">{row['Odds']:.2f}</div>
-                    </div>
-                    """
-                    st.markdown(odds_html, unsafe_allow_html=True)
+                    st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row['Odds']:.2f}</div></div>""", unsafe_allow_html=True)
                     
                     with st.expander("Details"):
                         if row['Odds'] > 0:
@@ -105,31 +98,58 @@ def render_dashboard(bankroll, kelly_multiplier):
                             if not is_in_slip:
                                 row_data = row.to_dict(); row_data['User_Stake'] = cash_stake
                                 st.session_state.bet_slip.append(row_data); st.rerun()
-                        else:
-                            if is_in_slip:
-                                st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
+                            else:
+                                if is_in_slip:
+                                    st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
 
-        # --- SMART PARLAY BUILDER ---
+        # --- SMART PARLAY BUILDER (UPGRADED) ---
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
         
+        # Filter out Arbitrage bets (Odds 0)
         parlay_candidates = df[df['Odds'] > 1.0]
         
         if len(parlay_candidates) >= 2:
-            parlay_legs = parlay_candidates.sort_values('Edge', ascending=False).to_dict('records')
-            best_parlay_edge = -1; best_parlay_combo = None
-            for combo in combinations(parlay_legs[:5], 2): 
+            # 1. The "Bankroll Builder" (Highest Confidence)
+            safe_legs = parlay_candidates.sort_values('Confidence', ascending=False).to_dict('records')
+            safe_combo = None
+            for combo in combinations(safe_legs[:5], 2):
                 if combo[0]['Match'] != combo[1]['Match']:
-                    parlay_edge = ((1 + combo[0]['Edge']) * (1 + combo[1]['Edge'])) - 1
-                    if parlay_edge > best_parlay_edge: best_parlay_edge = parlay_edge; best_parlay_combo = combo
-            if best_parlay_combo:
-                total_odds = best_parlay_combo[0]['Odds'] * best_parlay_combo[1]['Odds']
-                st.success(f"🔥 **Top 2-Leg Parlay** | Total Odds: **{total_odds:.2f}** | Combined Edge: **{best_parlay_edge:.2%}**")
-                c1, c2 = st.columns(2)
-                with c1: st.info(f"Leg 1: {best_parlay_combo[0]['Match']} -> {best_parlay_combo[0]['Bet']}")
-                with c2: st.info(f"Leg 2: {best_parlay_combo[1]['Match']} -> {best_parlay_combo[1]['Bet']}")
-            else: st.info("Could not build a valid parlay.")
-        else: st.info("Not enough value bets to build a parlay.")
+                    safe_combo = combo
+                    break
+            
+            # 2. The "Moonshot" (Highest Edge)
+            value_legs = parlay_candidates.sort_values('Edge', ascending=False).to_dict('records')
+            value_combo = None
+            for combo in combinations(value_legs[:5], 2):
+                if combo[0]['Match'] != combo[1]['Match']:
+                    value_combo = combo
+                    break
+
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if safe_combo:
+                    safe_odds = safe_combo[0]['Odds'] * safe_combo[1]['Odds']
+                    safe_prob = safe_combo[0]['Confidence'] * safe_combo[1]['Confidence']
+                    st.success(f"🛡️ **Bankroll Builder**")
+                    st.metric("Total Odds", f"{safe_odds:.2f}")
+                    st.metric("True Win Probability", f"{safe_prob:.1%}")
+                    st.caption(f"1. {safe_combo[0]['Match']} ({safe_combo[0]['Bet']})")
+                    st.caption(f"2. {safe_combo[1]['Match']} ({safe_combo[1]['Bet']})")
+            
+            with col2:
+                if value_combo:
+                    value_odds = value_combo[0]['Odds'] * value_combo[1]['Odds']
+                    value_edge = ((1 + value_combo[0]['Edge']) * (1 + value_combo[1]['Edge'])) - 1
+                    st.warning(f"🚀 **Moonshot Value**")
+                    st.metric("Total Odds", f"{value_odds:.2f}")
+                    st.metric("Combined Edge", f"{value_edge:.1%}")
+                    st.caption(f"1. {value_combo[0]['Match']} ({value_combo[0]['Bet']})")
+                    st.caption(f"2. {value_combo[1]['Match']} ({value_combo[1]['Bet']})")
+
+        else:
+            st.info("Not enough value bets to build a parlay.")
 
     elif df == "NO_BETS_FOUND":
         st.success("✅ System Online. Market Scanned. No Value Found.")
@@ -158,28 +178,10 @@ def render_bet_tracker(bankroll):
         slip_df = pd.DataFrame(st.session_state.bet_slip)
         total_stake = 0; potential_return = 0
         for i, bet in slip_df.iterrows():
-            # Broken down for safety
-            ticket_html = f"""
-            <div class="bet-ticket" style="border-left: 4px solid #00C9FF;">
-                <div style="display:flex; justify-content:space-between;">
-                    <div style="font-weight:bold;">{bet['Match']}</div>
-                    <div style="color:#00e676;">{bet['Odds']:.2f}</div>
-                </div>
-                <div style="font-size:0.9em; color:#ccc;">{bet['Bet']}</div>
-                <div style="margin-top:10px; font-size:0.8em; color:#888;">
-                    Stake: <span style="color:white;">${bet.get('User_Stake', 0):.2f}</span>
-                </div>
-            </div>
-            """
-            st.markdown(ticket_html, unsafe_allow_html=True)
-            
-            total_stake += bet.get('User_Stake', 0)
-            potential_return += bet.get('User_Stake', 0) * bet['Odds']
-            
-        st.divider()
-        c1, c2 = st.columns(2)
-        c1.metric("Total Stake", f"${total_stake:.2f}")
-        c2.metric("Potential Return", f"${potential_return:.2f}")
+            st.markdown(f"""<div class="bet-ticket" style="border-left: 4px solid #00C9FF;"><div style="display:flex; justify-content:space-between;"><div style="font-weight:bold;">{bet['Match']}</div><div style="color:#00e676;">{bet['Odds']:.2f}</div></div><div style="font-size:0.9em; color:#ccc;">{bet['Bet']}</div><div style="margin-top:10px; font-size:0.8em; color:#888;">Stake: <span style="color:white;">${bet.get('User_Stake', 0):.2f}</span></div></div>""", unsafe_allow_html=True)
+            total_stake += bet.get('User_Stake', 0); potential_return += bet.get('User_Stake', 0) * bet['Odds']
+        st.divider(); c1, c2 = st.columns(2)
+        c1.metric("Total Stake", f"${total_stake:.2f}"); c2.metric("Potential Return", f"${potential_return:.2f}")
         if st.button("Clear Slip"): st.session_state.bet_slip = []; st.rerun()
     else: st.info("Your bet slip is empty.")
 
@@ -243,4 +245,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v54.0 (Enterprise Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v55.0 (Enterprise Edition)")
