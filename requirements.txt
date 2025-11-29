@@ -1,4 +1,4 @@
-# === CORE (locked to Python 3.9 compatible versions) ===
+# CORE — LOCKED TO PYTHON 3.9 COMPATIBLE VERSIONS
 pandas==2.0.3
 numpy==1.24.4
 scipy==1.10.1
@@ -6,12 +6,13 @@ scikit-learn==1.3.2
 xgboost==1.7.6
 joblib==1.3.2
 
-# === SPORTS DATA ===
-nfl_data_py==2.7.3
-nba_api==1.5.1
+# SPORTS DATA — REMOVE NFL IF YOU DON'T USE IT
+# nfl_data_py 2.7.3 does NOT exist → use latest compatible
+nfl_data_py==0.3.3          # ← MAX VERSION FOR PY 3.9
+nba_api==1.4.0              # 1.5+ needs Python 3.10+
 pybaseball==2.2.7
 
-# === WEB & PARSING ===
+# WEB & PARSING
 requests==2.31.0
 beautifulsoup4==4.12.2
 lxml==4.9.3
@@ -19,12 +20,10 @@ fuzzywuzzy==0.18.0
 python-levenshtein==0.25.1
 textblob==0.18.0.post0
 
-# === STREAMLIT & VIS ===
+# STREAMLIT & VIS
 streamlit==1.38.0
 plotly==5.18.0
 matplotlib==3.7.3
-
-# === UTILS ===
 tqdm==4.66.1
 cachetools==5.3.3
 python-dotenv==1.0.1
