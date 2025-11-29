@@ -1,6 +1,6 @@
 # views.py
-# The "Vegas Edition" Layouts (v52.0)
-# Fixes: Clean History Table (No ISO Dates, No NaNs)
+# The "Vegas Edition" Layouts (v53.0)
+# Fixes: Center Aligned Tables, Always-Visible Metrics
 
 import streamlit as st
 import pandas as pd
@@ -159,6 +159,15 @@ def render_bet_tracker(bankroll):
 
 def render_history():
     st.markdown('<p class="gradient-text">📜 History</p>', unsafe_allow_html=True)
+    
+    # --- CSS FOR CENTER ALIGNMENT ---
+    st.markdown("""
+    <style>
+        th { text-align: center !important; }
+        td { text-align: center !important; }
+    </style>
+    """, unsafe_allow_html=True)
+    
     df = utils.load_data(utils.HISTORY_URL)
     
     if isinstance(df, pd.DataFrame):
@@ -167,32 +176,39 @@ def render_history():
             st.dataframe(df)
             return
 
-        # Metrics (Settled Only)
+        # --- METRICS (ALWAYS VISIBLE) ---
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
+        
         if not settled.empty:
             total_profit = settled['Profit'].sum()
             win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
-            c1, c2 = st.columns(2)
-            c1.metric("Total Profit", f"{total_profit:.2f}u")
-            c2.metric("Win Rate", f"{win_rate:.1%}")
-            st.divider()
+            total_bets = len(settled)
+        else:
+            total_profit = 0.0
+            win_rate = 0.0
+            total_bets = 0
 
-        # --- CLEAN TABLE DISPLAY ---
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Model Profit", f"{total_profit:.2f}u")
+        c2.metric("Model Accuracy", f"{win_rate:.1%}")
+        c3.metric("Total Bets Settled", total_bets)
+        st.divider()
+
+        # --- TABLE DISPLAY ---
         display_df = df.copy()
         display_df['Result'] = display_df['Result'].fillna('Pending')
         display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
         
-        # FIX 1: Replace NaN Profit with 0.00
-        display_df['Profit'] = display_df['Profit'].fillna(0.0).map('{:.2f}'.format)
-        
-        # FIX 2: Use the Pretty Date (Formatted_Date) instead of raw Date
-        # This overwrites the ugly ISO date with the nice one
-        if 'Formatted_Date' in display_df.columns:
-            display_df['Date'] = display_df['Formatted_Date']
+        # Fix Profit Display
+        display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
 
-        # FIX 3: Select only the clean columns
-        cols = ['Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
-        # Filter to ensure columns exist
+        # Rename and Select Columns
+        if 'Formatted_Date' in display_df.columns:
+            display_df = display_df.rename(columns={'Formatted_Date': 'Match Time'})
+        elif 'Date' in display_df.columns:
+            display_df = display_df.rename(columns={'Date': 'Match Time'})
+            
+        cols = ['Match Time', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
         cols = [c for c in cols if c in display_df.columns]
         
         st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
@@ -200,4 +216,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v52.0 (Enterprise Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v53.0 (Enterprise Edition)")
