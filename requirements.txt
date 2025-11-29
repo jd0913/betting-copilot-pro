@@ -6,7 +6,7 @@ joblib
 tqdm
 matplotlib
 streamlit
-streamlit-option-menu        # THIS LINE WAS MISSING — THE ONLY REASON IT CRASHED
+streamlit_option_menu        # ← THIS IS THE REAL NAME (underscores, no hyphen)
 plotly
 requests
 beautifulsoup4
