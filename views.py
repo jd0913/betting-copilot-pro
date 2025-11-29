@@ -210,4 +210,9 @@ def render_history():
         elif 'Date' in display_df.columns: display_df = display_df.rename(columns={'Date': 'Match Time'})
         cols = ['Match Time', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
         cols = [c for c in cols if c in display_df.columns]
-        st.write(display_df[cols]
+        st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
+    else: st.info("No history found.")
+
+def render_about():
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v62.1 (Self-Aware Edition)")
