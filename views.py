@@ -1,9 +1,10 @@
 # views.py
-# The "Vegas Edition" Layouts (v56.0)
-# Fixes: Decimal Bankroll Inputs
+# The "Vegas Edition" Layouts (v56.1)
+# Fixes: Added missing numpy import for History page
 
 import streamlit as st
 import pandas as pd
+import numpy as np  # <--- THIS WAS MISSING
 import plotly.graph_objects as go
 from itertools import combinations
 import utils
@@ -146,10 +147,6 @@ def render_market_map():
 
 def render_bet_tracker(bankroll):
     st.markdown('<p class="gradient-text">🎟️ Bet Slip</p>', unsafe_allow_html=True)
-    
-    # *** FIX: Allow decimal input for bankroll here too ***
-    bankroll = st.number_input("Your Bankroll ($)", value=float(bankroll), min_value=0.0, step=0.01, format="%.2f", key="tracker_bankroll")
-    
     if st.session_state.bet_slip:
         slip_df = pd.DataFrame(st.session_state.bet_slip)
         total_stake = 0; potential_return = 0
@@ -204,6 +201,7 @@ def render_history():
         display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
         
         # Fix Profit Display (Show '-' for pending)
+        # *** FIX: np is now imported ***
         display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
 
         # Rename and Select Columns
@@ -221,4 +219,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v56.0 (Enterprise Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v56.1 (Enterprise Edition)")
