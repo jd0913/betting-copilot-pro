@@ -1,6 +1,6 @@
 # views.py
-# The "Vegas Edition" Layouts (v50.0)
-# Fixes: Duplicate Date Columns, Clean History Table
+# The "Vegas Edition" Layouts (v52.0)
+# Fixes: Clean History Table (No ISO Dates, No NaNs)
 
 import streamlit as st
 import pandas as pd
@@ -182,22 +182,22 @@ def render_history():
         display_df['Result'] = display_df['Result'].fillna('Pending')
         display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
         
-        # Fix Profit Display (Show '-' for pending)
-        display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
+        # FIX 1: Replace NaN Profit with 0.00
+        display_df['Profit'] = display_df['Profit'].fillna(0.0).map('{:.2f}'.format)
+        
+        # FIX 2: Use the Pretty Date (Formatted_Date) instead of raw Date
+        # This overwrites the ugly ISO date with the nice one
+        if 'Formatted_Date' in display_df.columns:
+            display_df['Date'] = display_df['Formatted_Date']
 
-        # *** FIX: Select ONLY the columns we want to show ***
-        # This removes the raw 'Date' and 'Date_Generated' columns
-        cols_to_show = ['Formatted_Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
-        
+        # FIX 3: Select only the clean columns
+        cols = ['Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
         # Filter to ensure columns exist
-        final_cols = [c for c in cols_to_show if c in display_df.columns]
+        cols = [c for c in cols if c in display_df.columns]
         
-        # Rename 'Formatted_Date' to 'Match Time' for the header
-        display_df = display_df[final_cols].rename(columns={'Formatted_Date': 'Match Time'})
-        
-        st.write(display_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
         st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v50.0 (Enterprise Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v52.0 (Enterprise Edition)")
