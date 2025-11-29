@@ -1,6 +1,6 @@
 # views.py
-# The "Self-Aware" Layouts (v63.1)
-# Fixes: Prevent negative inputs in Parlay Calculator
+# The "Psychological Armor" Layouts (v64.0)
+# Features: Circuit Breaker, Monte Carlo Simulation, Risk Management
 
 import streamlit as st
 import pandas as pd
@@ -12,21 +12,18 @@ import utils
 def render_dashboard(bankroll, kelly_multiplier):
     st.markdown('<p class="gradient-text">🚀 Live Command Center</p>', unsafe_allow_html=True)
     
-    # Load Data
     df = utils.load_data(utils.LATEST_URL)
-    history_df = utils.load_data(utils.HISTORY_URL)
     
-    # Calculate Live Stats
-    stats = utils.get_performance_stats(history_df)
-    
-    # --- 1. SYSTEM INTELLIGENCE TICKER ---
-    st.markdown("### 🧠 System Intelligence")
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Real-World Win Rate", f"{stats['win_rate']:.1%}", delta="Live Performance")
-    k2.metric("Real-World ROI", f"{stats['roi']:.1%}", delta="Profitability")
-    k3.metric("Knowledge Base", f"{stats['total_bets'] + 15000:,} Matches", help="Historical training data + Live tracked bets")
-    k4.metric("Active Opportunities", len(df) if isinstance(df, pd.DataFrame) else 0)
-    st.markdown("---")
+    # --- 1. TILT CONTROL (THE INSURANCE) ---
+    with st.expander("🛡️ Risk & Tilt Control (Insurance Settings)", expanded=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            max_daily_risk = st.number_input("Max Daily Risk (% of Bankroll)", value=5.0, step=0.5, help="Stop betting if total exposure exceeds this.")
+        with c2:
+            win_goal = st.number_input("Daily Profit Goal ($)", value=50.0, step=10.0, help="Walk away if you hit this number.")
+            
+        max_risk_dollars = bankroll * (max_daily_risk / 100)
+        st.caption(f"🛑 The system will warn you if you risk more than **${max_risk_dollars:.2f}** today.")
 
     if isinstance(df, pd.DataFrame):
         # --- FILTERS ---
@@ -37,15 +34,34 @@ def render_dashboard(bankroll, kelly_multiplier):
         
         if selected_sport != "All": df = df[df['Sport'] == selected_sport]
         
+        # --- KPI CARDS ---
+        total_bets = len(df)
+        top_edge = df['Edge'].max() if not df.empty else 0
+        
+        kpi_html = f"""
+        <div style="display:flex; gap:10px; margin-bottom:20px;">
+            <div style="flex:1; background:#1e2130; padding:15px; border-radius:10px; border:1px solid #2b2f44; text-align:center;">
+                <div style="color:#8b92a5; font-size:0.8em; font-weight:bold;">ACTIVE BETS</div>
+                <div style="font-size:1.8em; font-weight:800; color:white;">{total_bets}</div>
+            </div>
+            <div style="flex:1; background:#1e2130; padding:15px; border-radius:10px; border:1px solid #2b2f44; text-align:center;">
+                <div style="color:#8b92a5; font-size:0.8em; font-weight:bold;">TOP EDGE</div>
+                <div style="font-size:1.8em; font-weight:800; color:#00e676;">{top_edge:.1%}</div>
+            </div>
+        </div>
+        """
+        st.markdown(kpi_html, unsafe_allow_html=True)
+
         # --- THE BETTING FEED ---
         st.markdown("### 📋 Actionable Recommendations")
+        
+        current_exposure = 0.0
         
         if not df.empty:
             df['key'] = df['Match'] + "_" + df['Bet']
 
         for i, row in df.iterrows():
-            sport = row.get('Sport', 'Soccer')
-            sport_icon = utils.get_team_emoji(sport)
+            sport_icon = utils.get_team_emoji(row.get('Sport', 'Soccer'))
             match_time = row.get('Formatted_Date', 'Time TBD')
             risk_badge = utils.get_risk_badge(row)
             bookie = row.get('Info', 'Best Price')
@@ -54,16 +70,18 @@ def render_dashboard(bankroll, kelly_multiplier):
             stake_pct = row.get('Stake', 0.01)
             cash_stake = bankroll * stake_pct * (kelly_multiplier / 0.25)
             
-            # Get Sport-Specific Accuracy
-            sport_acc = stats['sport_stats'].get(sport, 0.0)
-            sport_acc_str = f"{sport_acc:.0%}" if sport_acc > 0 else "New"
+            # Check Circuit Breaker
+            current_exposure += cash_stake
+            risk_warning = ""
+            if current_exposure > max_risk_dollars:
+                risk_warning = f"⚠️ **SKIP THIS BET:** Daily risk limit (${max_risk_dollars:.2f}) exceeded."
+                cash_stake = 0 # Suggest 0 stake
             
             with st.container():
                 c1, c2 = st.columns([3, 1])
                 
                 with c1:
-                    # Safe HTML formatting
-                    card_html = f"""
+                    st.markdown(f"""
                     <div class="bet-ticket">
                         <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
                             <span style="color:#8b92a5; font-size:0.8em;">{match_time} • {row.get('League', 'League')}</span>
@@ -83,19 +101,16 @@ def render_dashboard(bankroll, kelly_multiplier):
                             <div><div class="metric-label">STAKE</div><div class="metric-value">${cash_stake:.2f}</div></div>
                         </div>
                     </div>
-                    """
-                    st.markdown(card_html, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
+                    if risk_warning:
+                        st.error(risk_warning)
                 
                 with c2:
                     st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row['Odds']:.2f}</div></div>""", unsafe_allow_html=True)
                     
                     with st.expander("Details"):
-                        if row['Odds'] > 0:
-                            st.write(f"**Implied:** {(1/row['Odds']):.1%}")
-                        else:
-                            st.write("**Implied:** N/A (Arbitrage)")
-                            
-                        st.write(f"**Model Accuracy ({sport}):** {sport_acc_str}")
+                        if row['Odds'] > 0: st.write(f"**Implied:** {(1/row['Odds']):.1%}")
+                        else: st.write("**Implied:** N/A")
                         
                         key = row['key']
                         is_in_slip = any(b['key'] == key for b in st.session_state.bet_slip)
@@ -107,58 +122,48 @@ def render_dashboard(bankroll, kelly_multiplier):
                             if is_in_slip:
                                 st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
 
-        # --- SMART PARLAY BUILDER ---
+        # --- 2. MONTE CARLO SIMULATION (The "Long Term" View) ---
         st.markdown("---")
-        st.subheader("🧩 Smart Parlay Builder")
+        st.subheader("🔮 Future Projection (Monte Carlo)")
+        st.caption("This simulation shows 100 possible futures for your bankroll over the next 100 bets. It proves that short-term losses are normal.")
         
-        parlay_candidates = df[(df['Odds'] > 1.1) & (df['Odds'] < 3.0) & (df['Bet Type'] != 'ARBITRAGE')]
-        
-        if len(parlay_candidates) >= 2:
-            # 1. Bankroll Builder (Safe)
-            safe_legs = parlay_candidates.sort_values('Confidence', ascending=False).to_dict('records')
-            safe_combo = None
-            for combo in combinations(safe_legs[:6], 2):
-                if combo[0]['Match'] != combo[1]['Match']: safe_combo = combo; break
+        if not df.empty:
+            avg_edge = df['Edge'].mean()
+            avg_odds = df['Odds'].mean()
+            win_prob = (1 / avg_odds) + avg_edge # Estimated true win prob
             
-            # 2. Value Stack (Medium)
-            value_legs = parlay_candidates.sort_values('Edge', ascending=False).to_dict('records')
-            value_combo = None
-            for combo in combinations(value_legs[:6], 3):
-                if len(set([c['Match'] for c in combo])) == 3: value_combo = combo; break
-
-            tab1, tab2 = st.tabs(["🛡️ Safe (2-Leg)", "🚀 Value (3-Leg)"])
-
-            def render_parlay_card(combo, title):
-                if not combo: st.info("Not enough bets found."); return
-                tot_odds = np.prod([c['Odds'] for c in combo])
-                tot_prob = np.prod([c['Confidence'] for c in combo])
-                tot_edge = (tot_prob * tot_odds) - 1
-                kelly_stake_pct = (tot_edge / (tot_odds - 1)) * kelly_multiplier if tot_odds > 1 else 0
-                kelly_stake_cash = bankroll * kelly_stake_pct
-                
-                c1, c2 = st.columns([2, 1])
-                with c1:
-                    st.markdown(f"#### {title}")
-                    for leg in combo: st.markdown(f"• **{leg['Bet']}** @ {leg['Odds']:.2f} ({leg['Match']})")
-                with c2:
-                    st.metric("Total Odds", f"{tot_odds:.2f}")
-                    st.metric("Win Prob", f"{tot_prob:.1%}")
-                    st.metric("Rec. Stake", f"${kelly_stake_cash:.2f}")
-                
-                # *** FIX: Added min_value=0.0 to prevent negative inputs ***
-                user_stake = st.number_input(
-                    f"Wager ($) - {title}", 
-                    min_value=0.0, 
-                    value=float(int(kelly_stake_cash)) if kelly_stake_cash > 1 else 5.0, 
-                    step=5.0
-                )
-                st.success(f"💰 Potential Payout: **${user_stake * tot_odds:.2f}**")
-
-            with tab1: render_parlay_card(safe_combo, "Bankroll Builder")
-            with tab2: render_parlay_card(value_combo, "Value Stack")
-
-        else: st.info("Not enough value bets to build a parlay.")
-
+            simulations = []
+            for i in range(50): # Run 50 simulations
+                sim_path = [bankroll]
+                current_bank = bankroll
+                for bet in range(100): # 100 bets into the future
+                    # Simulate a bet
+                    stake = current_bank * 0.02 # Assume 2% flat stake for sim
+                    if np.random.random() < win_prob:
+                        current_bank += stake * (avg_odds - 1)
+                    else:
+                        current_bank -= stake
+                    sim_path.append(current_bank)
+                simulations.append(sim_path)
+            
+            # Plot
+            fig = go.Figure()
+            for sim in simulations:
+                fig.add_trace(go.Scatter(y=sim, mode='lines', line=dict(color='rgba(0, 230, 118, 0.1)'), showlegend=False))
+            
+            # Add Average Path
+            avg_path = np.mean(simulations, axis=0)
+            fig.add_trace(go.Scatter(y=avg_path, mode='lines', name='Average Outcome', line=dict(color='#00C9FF', width=3)))
+            
+            fig.update_layout(
+                template="plotly_dark", 
+                title="Projected Bankroll Growth (Next 100 Bets)",
+                xaxis_title="Number of Bets",
+                yaxis_title="Bankroll ($)",
+                height=400
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
     elif df == "NO_BETS_FOUND":
         st.success("✅ System Online. Market Scanned. No Value Found.")
     else:
@@ -199,62 +204,23 @@ def render_bet_tracker(bankroll):
 
 def render_history():
     st.markdown('<p class="gradient-text">📜 History</p>', unsafe_allow_html=True)
-    
-    # --- CSS FOR CENTER ALIGNMENT ---
-    st.markdown("""
-    <style>
-        th { text-align: center !important; }
-        td { text-align: center !important; }
-    </style>
-    """, unsafe_allow_html=True)
-    
+    st.markdown("""<style>th { text-align: center !important; } td { text-align: center !important; }</style>""", unsafe_allow_html=True)
     df = utils.load_data(utils.HISTORY_URL)
-    
     if isinstance(df, pd.DataFrame):
-        if 'Result' not in df.columns:
-            st.info("No results settled yet.")
-            st.dataframe(df)
-            return
-
-        # --- METRICS (ALWAYS VISIBLE) ---
+        if 'Result' not in df.columns: st.info("No results settled yet."); st.dataframe(df); return
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
-        
         if not settled.empty:
-            total_profit = settled['Profit'].sum()
-            win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
-            total_bets = len(settled)
-        else:
-            total_profit = 0.0
-            win_rate = 0.0
-            total_bets = 0
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Model Profit", f"{total_profit:.2f}u")
-        c2.metric("Model Accuracy", f"{win_rate:.1%}")
-        c3.metric("Total Bets Settled", total_bets)
-        st.divider()
-
-        # --- TABLE DISPLAY ---
-        display_df = df.copy()
-        display_df['Result'] = display_df['Result'].fillna('Pending')
-        display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
-        
-        # Fix Profit Display (Show '-' for pending)
+            total_profit = settled['Profit'].sum(); win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
+            c1, c2 = st.columns(2); c1.metric("Total Profit", f"{total_profit:.2f}u"); c2.metric("Win Rate", f"{win_rate:.1%}"); st.divider()
+        display_df = df.copy(); display_df['Result'] = display_df['Result'].fillna('Pending'); display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
         display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
-
-        # Rename and Select Columns
-        if 'Formatted_Date' in display_df.columns:
-            display_df = display_df.rename(columns={'Formatted_Date': 'Match Time'})
-        elif 'Date' in display_df.columns:
-            display_df = display_df.rename(columns={'Date': 'Match Time'})
-            
+        if 'Formatted_Date' in display_df.columns: display_df = display_df.rename(columns={'Formatted_Date': 'Match Time'})
+        elif 'Date' in display_df.columns: display_df = display_df.rename(columns={'Date': 'Match Time'})
         cols = ['Match Time', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
-        # Filter to ensure columns exist
         cols = [c for c in cols if c in display_df.columns]
-        
         st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
         st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v63.1 (Self-Aware Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v64.0 (Psychological Armor Edition)")
