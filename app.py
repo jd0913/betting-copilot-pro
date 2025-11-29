@@ -1,6 +1,6 @@
 # app.py
-# The "Manager" - Entry point for v46.0
-# Updates: Removed Font Selector (Fixed to Inter), Streamlined Sidebar
+# The "Manager" - Entry point for v50.0
+# Update: Bankroll now accepts decimals/cents
 
 import streamlit as st
 import utils
@@ -21,18 +21,24 @@ st.set_page_config(
 # ==============================================================================
 if 'bet_slip' not in st.session_state: st.session_state.bet_slip = []
 
-# Inject CSS (Defaults to "Clean (Inter)" automatically)
+# Inject CSS
 utils.inject_custom_css()
 
 st.sidebar.title("Navigation")
 
 # Global Settings
 st.sidebar.header("💰 Bankroll")
-bankroll = st.sidebar.number_input("Bankroll ($)", value=1000, step=100)
 
-# Hardcoded Professional Standard (Quarter Kelly)
-# This protects users from over-betting without them knowing.
-kelly_multiplier = 0.25
+# *** FIX: Changed value to 1000.0 (float) and step to 0.01 ***
+bankroll = st.sidebar.number_input(
+    "Bankroll ($)", 
+    value=1000.0, 
+    min_value=0.0, 
+    step=0.01, 
+    format="%.2f"
+)
+
+kelly_multiplier = st.sidebar.slider("Kelly Multiplier", 0.1, 1.0, 0.25)
 
 st.sidebar.markdown("---")
 
