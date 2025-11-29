@@ -1,6 +1,6 @@
 # views.py
-# The "Advanced Parlay" Layouts (v60.0)
-# Features: Multi-Leg Parlays (3-5 legs), Anchor Logic, Cross-Sport Stacking
+# The "Interactive Parlay" Layouts (v61.0)
+# Features: Live Parlay Calculator, Payout Math, Kelly for Parlays
 
 import streamlit as st
 import pandas as pd
@@ -98,78 +98,68 @@ def render_dashboard(bankroll, kelly_multiplier):
                                 if is_in_slip:
                                     st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
 
-        # --- ADVANCED PARLAY ENGINE ---
+        # --- SMART PARLAY BUILDER (INTERACTIVE) ---
         st.markdown("---")
-        st.subheader("🧩 Advanced Parlay Engine")
+        st.subheader("🧩 Smart Parlay Builder")
         
-        # Filter valid parlay candidates (No Arbs, Odds > 1.1)
-        candidates = df[(df['Odds'] > 1.1) & (df['Bet Type'] != 'ARBITRAGE')]
+        parlay_candidates = df[(df['Odds'] > 1.1) & (df['Odds'] < 3.0) & (df['Bet Type'] != 'ARBITRAGE')]
         
-        if len(candidates) >= 2:
-            # Strategy 1: The "Anchor" (Safe 2-Leg)
-            # Logic: High Confidence (>60%), Low Odds (<1.80)
-            anchors = candidates[(candidates['Confidence'] > 0.60) & (candidates['Odds'] < 1.80)].sort_values('Confidence', ascending=False).to_dict('records')
+        if len(parlay_candidates) >= 2:
+            # 1. Bankroll Builder (Safe)
+            safe_legs = parlay_candidates.sort_values('Confidence', ascending=False).to_dict('records')
+            safe_combo = None
+            for combo in combinations(safe_legs[:6], 2):
+                if combo[0]['Match'] != combo[1]['Match']: safe_combo = combo; break
             
-            # Strategy 2: The "Value Stack" (3-Leg)
-            # Logic: High Edge (>10%), Medium Odds (1.5 - 2.5)
-            value_plays = candidates[(candidates['Edge'] > 0.10) & (candidates['Odds'].between(1.5, 2.5))].sort_values('Edge', ascending=False).to_dict('records')
-            
-            # Strategy 3: The "Lotto" (4-Leg)
-            # Logic: High Odds (>2.5), Positive Edge
-            lottos = candidates[(candidates['Odds'] > 2.5) & (candidates['Edge'] > 0)].sort_values('Edge', ascending=False).to_dict('records')
+            # 2. Value Stack (Medium)
+            value_legs = parlay_candidates.sort_values('Edge', ascending=False).to_dict('records')
+            value_combo = None
+            for combo in combinations(value_legs[:6], 3): # 3 Legs
+                if len(set([c['Match'] for c in combo])) == 3: value_combo = combo; break
 
-            tab1, tab2, tab3 = st.tabs(["🛡️ Safe Anchors", "🚀 Value Stack", "🎰 Lotto Ticket"])
+            # 3. Moonshot (High Risk)
+            lotto_legs = df[(df['Odds'] > 2.5) & (df['Edge'] > 0)].sort_values('Edge', ascending=False).to_dict('records')
+            lotto_combo = None
+            for combo in combinations(lotto_legs[:8], 4): # 4 Legs
+                if len(set([c['Match'] for c in combo])) == 4: lotto_combo = combo; break
 
-            with tab1:
-                if len(anchors) >= 2:
-                    combo = anchors[:2] # Top 2 safest
-                    if combo[0]['Match'] != combo[1]['Match']:
-                        tot_odds = combo[0]['Odds'] * combo[1]['Odds']
-                        prob = combo[0]['Confidence'] * combo[1]['Confidence']
-                        st.success(f"**The Bankroll Builder** | Odds: {tot_odds:.2f} | Win Prob: {prob:.1%}")
-                        for leg in combo: st.write(f"• {leg['Match']} -> **{leg['Bet']}** ({leg['Odds']})")
-                    else: st.info("Need distinct matches for a parlay.")
-                else: st.info("Not enough high-confidence anchors found.")
+            tab1, tab2, tab3 = st.tabs(["🛡️ Safe (2-Leg)", "🚀 Value (3-Leg)", "🎰 Lotto (4-Leg)"])
 
-            with tab2:
-                if len(value_plays) >= 3:
-                    # Find valid 3-leg combo (distinct matches)
-                    valid_combo = []
-                    seen_matches = set()
-                    for play in value_plays:
-                        if play['Match'] not in seen_matches:
-                            valid_combo.append(play)
-                            seen_matches.add(play['Match'])
-                        if len(valid_combo) == 3: break
-                    
-                    if len(valid_combo) == 3:
-                        tot_odds = np.prod([p['Odds'] for p in valid_combo])
-                        tot_edge = (np.prod([1+p['Edge'] for p in valid_combo])) - 1
-                        st.warning(f"**The Value Stack** | Odds: {tot_odds:.2f} | Combined Edge: {tot_edge:.1%}")
-                        for leg in valid_combo: st.write(f"• {leg['Match']} -> **{leg['Bet']}** ({leg['Odds']})")
-                    else: st.info("Not enough distinct value plays.")
-                else: st.info("Not enough value plays found.")
+            def render_parlay_card(combo, title):
+                if not combo:
+                    st.info("Not enough bets found for this strategy.")
+                    return
+                
+                tot_odds = np.prod([c['Odds'] for c in combo])
+                tot_prob = np.prod([c['Confidence'] for c in combo])
+                tot_edge = (tot_prob * tot_odds) - 1
+                
+                # Kelly for Parlay (Simplified)
+                # Stake = (Prob * Odds - 1) / (Odds - 1) * Multiplier
+                kelly_stake_pct = (tot_edge / (tot_odds - 1)) * kelly_multiplier if tot_odds > 1 else 0
+                kelly_stake_cash = bankroll * kelly_stake_pct
+                
+                c1, c2 = st.columns([2, 1])
+                with c1:
+                    st.markdown(f"#### {title}")
+                    for leg in combo:
+                        st.markdown(f"• **{leg['Bet']}** @ {leg['Odds']:.2f} ({leg['Match']})")
+                with c2:
+                    st.metric("Total Odds", f"{tot_odds:.2f}")
+                    st.metric("Win Prob", f"{tot_prob:.1%}")
+                    st.metric("Rec. Stake", f"${kelly_stake_cash:.2f}")
+                
+                # Interactive Calculator
+                user_stake = st.number_input(f"Wager Amount ($) - {title}", value=float(int(kelly_stake_cash)) if kelly_stake_cash > 1 else 5.0, step=5.0)
+                potential_win = user_stake * tot_odds
+                st.success(f"💰 Potential Payout: **${potential_win:.2f}**")
 
-            with tab3:
-                if len(lottos) >= 4:
-                    # Find valid 4-leg combo
-                    valid_combo = []
-                    seen_matches = set()
-                    for play in lottos:
-                        if play['Match'] not in seen_matches:
-                            valid_combo.append(play)
-                            seen_matches.add(play['Match'])
-                        if len(valid_combo) == 4: break
-                    
-                    if len(valid_combo) == 4:
-                        tot_odds = np.prod([p['Odds'] for p in valid_combo])
-                        st.error(f"**The Moonshot** | Odds: {tot_odds:.2f} | High Risk")
-                        for leg in valid_combo: st.write(f"• {leg['Match']} -> **{leg['Bet']}** ({leg['Odds']})")
-                    else: st.info("Not enough longshots found.")
-                else: st.info("Not enough longshots found.")
+            with tab1: render_parlay_card(safe_combo, "Bankroll Builder")
+            with tab2: render_parlay_card(value_combo, "Value Stack")
+            with tab3: render_parlay_card(lotto_combo, "Moonshot Ticket")
 
         else:
-            st.info("Not enough bets to build parlays.")
+            st.info("Not enough value bets to build a parlay.")
 
     elif df == "NO_BETS_FOUND":
         st.success("✅ System Online. Market Scanned. No Value Found.")
@@ -226,4 +216,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v60.0 (Advanced Parlay Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v61.0 (Interactive Parlay Edition)")
