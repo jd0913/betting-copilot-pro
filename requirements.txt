@@ -5,7 +5,7 @@ scikit-learn==1.5.2
 xgboost==2.1.1
 joblib==1.4.2
 
-nfl_data_py==2.7.3
+nfl_data_py==0.3.3
 nba_api==1.5.1
 pybaseball==2.2.7
 
