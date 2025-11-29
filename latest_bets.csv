@@ -1,82 +1,86 @@
 Date,Sport,League,Match,Bet Type,Bet,Odds,Edge,Confidence,Stake,Info,Date_Generated
-2025-11-29T15:00:00Z,Soccer,soccer_epl,Brentford vs Burnley,Moneyline,Away Win,6.75,0.6330153006644268,0.2419281926910262,0.03098280860049683,Best: BetRivers,2025-11-29
-2025-11-29T15:00:00Z,Soccer,soccer_epl,Manchester City vs Leeds United,Moneyline,Home Win,1.27,0.14307964200536682,0.9000627102404463,0.15803261038121943,Best: BetMGM,2025-11-29
-2025-11-29T17:30:00Z,Soccer,soccer_epl,Everton vs Newcastle United,Moneyline,Away Win,2.63,0.2530953708756629,0.4764621182036741,0.042751197286060416,Best: BetOnline.ag,2025-11-29
-2025-11-29T20:00:00Z,Soccer,soccer_epl,Tottenham Hotspur vs Fulham,Moneyline,Home Win,2.32,0.23659032774812094,0.5330130723052245,0.0504689588288223,Best: LowVig.ag,2025-11-29
-2025-11-30T16:30:00Z,Soccer,soccer_epl,Chelsea vs Arsenal,Moneyline,Away Win,2.25,0.156623727555669,0.5140549900247418,0.03574340813259629,Best: FanDuel,2025-11-29
-2025-12-02T19:30:00Z,Soccer,soccer_epl,Bournemouth vs Everton,Moneyline,Away Win,3.9,0.3611298218469905,0.34900764662743344,0.03463052572593804,Best: Bovada,2025-11-29
-2025-12-02T19:30:00Z,Soccer,soccer_epl,Fulham vs Manchester City,Moneyline,Away Win,1.64,0.2822048207555803,0.7818322077777929,0.1279810183552092,Best: LowVig.ag,2025-11-29
-2025-12-02T20:15:00Z,Soccer,soccer_epl,Newcastle United vs Tottenham Hotspur,Moneyline,Away Win,4.5,0.31335431204128783,0.2918565137869529,0.025479428176823856,Best: BetRivers,2025-11-29
-2025-12-03T19:30:00Z,Soccer,soccer_epl,Arsenal vs Brentford,Moneyline,Draw,5.75,0.053592114993957995,0.18323341130329704,0.003184736383251601,Best: Bovada,2025-11-29
-2025-12-03T19:30:00Z,Soccer,soccer_epl,Arsenal vs Brentford,Moneyline,Away Win,10.5,0.5212969057957895,0.144885419599599,0.015489155657987228,Best: FanDuel,2025-11-29
-2025-12-03T19:30:00Z,Soccer,soccer_epl,Brighton and Hove Albion vs Aston Villa,Moneyline,Away Win,3.3,0.3565819147525895,0.41108542871290593,0.042805244035204755,Best: Bovada,2025-11-29
-2025-12-03T19:30:00Z,Soccer,soccer_epl,Burnley vs Crystal Palace,Moneyline,Draw,3.96,0.052141669261667856,0.2656923407226434,0.004785387931101491,Best: LowVig.ag,2025-11-29
-2025-12-03T20:15:00Z,Soccer,soccer_epl,Leeds United vs Chelsea,Moneyline,Away Win,1.8,0.3206629178271059,0.7337016210150588,0.11557967714567187,Best: Bovada,2025-11-29
-2025-11-29T13:00:00Z,Soccer,soccer_spain_la_liga,Mallorca vs CA Osasuna,Moneyline,Home Win,2.45,0.12539892901080907,0.4593465016370649,0.024004740547994768,Best: DraftKings,2025-11-29
-2025-11-29T15:15:00Z,Soccer,soccer_spain_la_liga,Barcelona vs Alavés,Moneyline,Home Win,1.21,0.07158074526339941,0.8856039217052888,0.09381228941455479,Best: DraftKings,2025-11-29
-2025-11-29T17:30:00Z,Soccer,soccer_spain_la_liga,Levante vs Athletic Bilbao,Moneyline,Away Win,2.23,0.053105108743786156,0.47224444338286375,0.012077697639827646,Best: Bovada,2025-11-29
-2025-11-30T13:00:00Z,Soccer,soccer_spain_la_liga,Real Sociedad vs Villarreal,Moneyline,Home Win,2.85,0.38703543772498095,0.48667910095613365,0.06041329665943316,Best: DraftKings,2025-11-29
-2025-11-30T15:15:00Z,Soccer,soccer_spain_la_liga,Sevilla vs Real Betis,Moneyline,Home Win,2.95,0.117904385676316,0.3789506392123105,0.017132170079713814,Best: DraftKings,2025-11-29
-2025-11-30T17:30:00Z,Soccer,soccer_spain_la_liga,Celta Vigo vs Espanyol,Moneyline,Home Win,2.05,0.11474348014567326,0.5437773073881333,0.030411116852807004,Best: LowVig.ag,2025-11-29
-2025-11-30T20:00:00Z,Soccer,soccer_spain_la_liga,Girona vs Real Madrid,Moneyline,Home Win,6.6,0.695528731875934,0.25689829270847486,0.03573875321121166,Best: BetOnline.ag,2025-11-29
-2025-11-30T20:00:00Z,Soccer,soccer_spain_la_liga,Girona vs Real Madrid,Moneyline,Draw,5.1,0.37931175177394993,0.2704532846615588,0.026621026077252377,Best: BetRivers,2025-11-29
-2025-12-01T20:00:00Z,Soccer,soccer_spain_la_liga,Rayo Vallecano vs Valencia,Moneyline,Away Win,4.4,0.7061202890015985,0.3877546111367269,0.05801446557082872,Best: BetRivers,2025-11-29
-2025-12-03T18:00:00Z,Soccer,soccer_spain_la_liga,Athletic Bilbao vs Real Madrid,Moneyline,Draw,4.05,0.11075082050324969,0.27425946185265426,0.0105619559980336,Best: BetUS,2025-11-29
-2025-12-06T13:00:00Z,Soccer,soccer_spain_la_liga,Villarreal vs Getafe,Moneyline,Away Win,6.4,0.3193214978508301,0.20614398403919218,0.016471772427759834,Best: BetRivers,2025-11-29
-2025-12-06T15:15:00Z,Soccer,soccer_spain_la_liga,Alavés vs Real Sociedad,Moneyline,Away Win,2.88,0.3381998744182433,0.4646527341730012,0.050758797329429305,Best: BetRivers,2025-11-29
-2025-12-06T17:30:00Z,Soccer,soccer_spain_la_liga,Real Betis vs Barcelona,Moneyline,Home Win,4.12,0.3681202774229986,0.3320680285007278,0.033410295253341445,Best: LowVig.ag,2025-11-29
-2025-12-07T13:00:00Z,Soccer,soccer_spain_la_liga,Elche CF vs Girona,Moneyline,Away Win,3.55,0.8740696985060112,0.527906957325637,0.09145999223930489,Best: BetRivers,2025-11-29
-2025-12-07T17:30:00Z,Soccer,soccer_spain_la_liga,Espanyol vs Rayo Vallecano,Moneyline,Home Win,2.4,0.07974600326598424,0.4498941680274935,0.015876723127699516,Best: FanDuel,2025-11-29
-2025-12-07T17:30:00Z,Soccer,soccer_spain_la_liga,Espanyol vs Rayo Vallecano,Moneyline,Draw,3.7,0.08612584947088897,0.293547526884024,0.008890982082278094,Best: Bovada,2025-11-29
-2025-12-07T20:00:00Z,Soccer,soccer_spain_la_liga,Real Madrid vs Celta Vigo,Moneyline,Home Win,1.36,0.19907470497541402,0.8816725771878043,0.157924025215038,Best: Bovada,2025-11-29
-2025-12-08T20:00:00Z,Soccer,soccer_spain_la_liga,CA Osasuna vs Levante,Moneyline,Draw,3.55,0.0959790481202909,0.30872649242825095,0.010233017085646902,Best: LowVig.ag,2025-11-29
-2025-11-29T14:30:00Z,Soccer,soccer_germany_bundesliga,Union Berlin vs 1. FC Heidenheim,Moneyline,Away Win,5.6,0.6582049700891368,0.29610803037306016,0.03937638442706339,Best: BetOnline.ag,2025-11-29
-2025-11-29T14:30:00Z,Soccer,soccer_germany_bundesliga,TSG Hoffenheim vs Augsburg,Moneyline,Away Win,4.5,0.14196457199177215,0.25376990488706047,0.011385776384202727,Best: BetRivers,2025-11-29
-2025-11-29T14:30:00Z,Soccer,soccer_germany_bundesliga,Bayern Munich vs FC St. Pauli,Moneyline,Draw,10.75,0.17595244178596126,0.10939092481729872,0.00488248561598519,Best: LowVig.ag,2025-11-29
-2025-11-29T14:30:00Z,Soccer,soccer_germany_bundesliga,Bayern Munich vs FC St. Pauli,Moneyline,Away Win,26.0,0.07759152005223191,0.04144582769431661,0.0008397007505297,Best: LowVig.ag,2025-11-29
-2025-11-29T17:30:00Z,Soccer,soccer_germany_bundesliga,Bayer Leverkusen vs Borussia Dortmund,Moneyline,Home Win,2.62,0.4096245794101905,0.5380246486298437,0.07304328288326009,Best: BetUS,2025-11-29
-2025-11-30T16:30:00Z,Soccer,soccer_germany_bundesliga,Eintracht Frankfurt vs VfL Wolfsburg,Moneyline,Draw,4.33,0.1365758770446781,0.2624886552066231,0.011957584789927271,Best: BetMGM,2025-11-29
-2025-11-30T16:30:00Z,Soccer,soccer_germany_bundesliga,Eintracht Frankfurt vs VfL Wolfsburg,Moneyline,Away Win,4.34,0.12112975027016959,0.25832482725119116,0.010573482712153985,Best: LowVig.ag,2025-11-29
-2025-12-06T14:30:00Z,Soccer,soccer_germany_bundesliga,1. FC Heidenheim vs SC Freiburg,Moneyline,Home Win,3.75,0.7091143135730336,0.45576381695280893,0.0712780109086301,Best: Bovada,2025-11-29
-2025-12-06T14:30:00Z,Soccer,soccer_germany_bundesliga,Augsburg vs Bayer Leverkusen,Moneyline,Away Win,1.9,0.4567101049830369,0.7666895289384404,0.15027658139083516,Best: Bovada,2025-11-29
-2025-12-06T14:30:00Z,Soccer,soccer_germany_bundesliga,VfB Stuttgart vs Bayern Munich,Moneyline,Home Win,6.0,0.7827842165461605,0.29713070275769343,0.041828856867175274,Best: FanDuel,2025-11-29
-2025-12-06T14:30:00Z,Soccer,soccer_germany_bundesliga,VfB Stuttgart vs Bayern Munich,Moneyline,Draw,5.3,0.362650269054543,0.2571038243499138,0.022533232014534305,Best: Bovada,2025-11-29
-2025-12-06T17:30:00Z,Soccer,soccer_germany_bundesliga,RB Leipzig vs Eintracht Frankfurt,Moneyline,Home Win,1.95,0.34705122220594986,0.6907954985671538,0.10760856626537163,Best: BetMGM,2025-11-29
-2025-12-07T16:30:00Z,Soccer,soccer_germany_bundesliga,Borussia Dortmund vs TSG Hoffenheim,Moneyline,Home Win,1.59,0.23979728615636686,0.7797467208530608,0.11113692423133004,Best: Bovada,2025-11-29
-2025-11-29T14:00:00Z,Soccer,soccer_italy_serie_a,Genoa vs Hellas Verona,Moneyline,Away Win,4.55,0.07816405138058369,0.23695913217155684,0.006175885102295907,Best: LowVig.ag,2025-11-29
-2025-11-29T17:00:00Z,Soccer,soccer_italy_serie_a,Juventus vs Cagliari,Moneyline,Draw,6.15,0.566846866445117,0.254771848202458,0.030945408677540295,Best: LowVig.ag,2025-11-29
-2025-11-29T17:00:00Z,Soccer,soccer_italy_serie_a,Juventus vs Cagliari,Moneyline,Away Win,12.5,0.5932321714483122,0.12745857371586497,0.014503224051304355,Best: LowVig.ag,2025-11-29
-2025-11-29T19:45:00Z,Soccer,soccer_italy_serie_a,AC Milan vs Lazio,Moneyline,Draw,4.0,0.456413284839952,0.364103321209988,0.04339143982361819,Best: Bovada,2025-11-29
-2025-11-29T19:45:00Z,Soccer,soccer_italy_serie_a,AC Milan vs Lazio,Moneyline,Away Win,5.5,0.06249167470444483,0.19318030449171725,0.003960743230580159,Best: FanDuel,2025-11-29
-2025-11-30T11:30:00Z,Soccer,soccer_italy_serie_a,Lecce vs Torino,Moneyline,Away Win,2.67,0.31594406659717533,0.4928629462910769,0.053069761816616476,Best: LowVig.ag,2025-11-29
-2025-11-30T17:00:00Z,Soccer,soccer_italy_serie_a,Atalanta BC vs Fiorentina,Moneyline,Away Win,5.1,0.4127033799478259,0.27700066273486784,0.02786773901690401,Best: FanDuel,2025-11-29
-2025-11-30T19:45:00Z,Soccer,soccer_italy_serie_a,AS Roma vs Napoli,Moneyline,Home Win,2.67,0.08482714179434003,0.40630230029750564,0.013827466535040626,Best: LowVig.ag,2025-11-29
-2025-12-06T14:00:00Z,Soccer,soccer_italy_serie_a,Sassuolo vs Fiorentina,Moneyline,Away Win,2.7,0.4246020385408824,0.5276303846447712,0.06715626067250821,Best: FanDuel,2025-11-29
-2025-12-06T19:45:00Z,Soccer,soccer_italy_serie_a,Hellas Verona vs Atalanta BC,Moneyline,Home Win,4.6,0.22718248260330687,0.2667788005659363,0.017523240068141866,Best: BetRivers,2025-11-29
-2025-12-07T11:30:00Z,Soccer,soccer_italy_serie_a,Cremonese vs Lecce,Moneyline,Home Win,2.7,0.1100887138255553,0.411143968083539,0.018547567443768304,Best: FanDuel,2025-11-29
-2025-12-07T17:00:00Z,Soccer,soccer_italy_serie_a,Lazio vs Bologna,Moneyline,Home Win,2.7,0.24507909791678806,0.4611404066358474,0.04073942754302894,Best: FanDuel,2025-11-29
-2025-12-07T19:45:00Z,Soccer,soccer_italy_serie_a,Napoli vs Juventus,Moneyline,Away Win,3.1,0.08277974397762278,0.34928378837987833,0.010974457987271166,Best: FanDuel,2025-11-29
-2025-12-08T17:00:00Z,Soccer,soccer_italy_serie_a,Udinese vs Genoa,Moneyline,Home Win,2.47,0.089209475738383,0.4409754962503575,0.017173014468251705,Best: BetOnline.ag,2025-11-29
-2025-12-08T19:45:00Z,Soccer,soccer_italy_serie_a,Torino vs AC Milan,Moneyline,Home Win,4.6,0.0808599396104841,0.2349695520892357,0.006237815030855075,Best: LowVig.ag,2025-11-29
-2025-11-29T16:00:00Z,Soccer,soccer_france_ligue_one,AS Monaco vs Paris Saint Germain,Moneyline,Home Win,4.9,0.41210789361777245,0.28818528441179025,0.02962407592175705,Best: BetRivers,2025-11-29
-2025-11-29T20:05:00Z,Soccer,soccer_france_ligue_one,Marseille vs Toulouse,Moneyline,Draw,4.2,0.1826450223370384,0.2815821481754853,0.01579842058061978,Best: BetMGM,2025-11-29
-2025-11-29T20:05:00Z,Soccer,soccer_france_ligue_one,Marseille vs Toulouse,Moneyline,Away Win,5.75,0.28448669656111614,0.22338899070628107,0.016577695625312593,Best: BetRivers,2025-11-29
-2025-11-30T14:00:00Z,Soccer,soccer_france_ligue_one,Strasbourg vs Brest,Moneyline,Draw,3.87,0.08204108479499927,0.27959717953359153,0.008190073313486942,Best: LowVig.ag,2025-11-29
-2025-11-30T14:00:00Z,Soccer,soccer_france_ligue_one,Strasbourg vs Brest,Moneyline,Away Win,4.49,0.8233475735209557,0.406090773612685,0.06759212104535649,Best: LowVig.ag,2025-11-29
-2025-11-30T16:15:00Z,Soccer,soccer_france_ligue_one,Angers vs RC Lens,Moneyline,Away Win,1.77,0.2406002409924073,0.7009040909561624,0.08314051175633884,Best: DraftKings,2025-11-29
-2025-11-30T16:15:00Z,Soccer,soccer_france_ligue_one,Le Havre vs Lille,Moneyline,Away Win,1.87,0.17928208763169007,0.6306321324233637,0.058778325202956894,Best: DraftKings,2025-11-29
-2025-11-30T16:15:00Z,Soccer,soccer_france_ligue_one,Lorient vs Nice,Moneyline,Away Win,3.08,0.8167208412666218,0.5898444289826694,0.11056097885973917,Best: LowVig.ag,2025-11-29
-2025-11-30T19:45:00Z,Soccer,soccer_france_ligue_one,Lyon vs Nantes,Moneyline,Away Win,8.0,0.3333589632418896,0.1666698704052362,0.013438673030018155,Best: FanDuel,2025-11-29
-2025-12-05T20:00:00Z,Soccer,soccer_france_ligue_one,Lille vs Marseille,Moneyline,Home Win,2.61,0.11324201492752928,0.42652950763506875,0.01987420287656833,Best: Bovada,2025-11-29
-2025-12-06T16:00:00Z,Soccer,soccer_france_ligue_one,Nantes vs RC Lens,Moneyline,Away Win,1.67,0.06389390510582449,0.6370622186262422,0.025964628282657675,Best: DraftKings,2025-11-29
-2025-12-06T20:05:00Z,Soccer,soccer_france_ligue_one,Paris Saint Germain vs Rennes,Moneyline,Draw,6.0,0.5525552789933368,0.2587592131655561,0.03045307879075619,Best: DraftKings,2025-11-29
-2025-12-06T20:05:00Z,Soccer,soccer_france_ligue_one,Paris Saint Germain vs Rennes,Moneyline,Away Win,9.5,0.8921004948056401,0.1991684731374358,0.028921467961894765,Best: BetRivers,2025-11-29
-2025-12-07T14:00:00Z,Soccer,soccer_france_ligue_one,Nice vs Angers,Moneyline,Home Win,1.74,0.2807808078224474,0.7360809240358893,0.10172985519329387,Best: DraftKings,2025-11-29
-2025-12-07T19:45:00Z,Soccer,soccer_france_ligue_one,Lorient vs Lyon,Moneyline,Draw,3.6,0.19730763419430786,0.33258545394286326,0.021966596068723573,Best: BetRivers,2025-11-29
-2025-12-07T19:45:00Z,Soccer,soccer_france_ligue_one,Lorient vs Lyon,Moneyline,Away Win,2.25,0.2201603747761065,0.5422934999004918,0.05098252791388901,Best: FanDuel,2025-11-29
+2025-11-29T15:00:00Z,Soccer,soccer_epl,Brentford vs Burnley,Moneyline,Draw,4.5,0.05528510221618266,0.23450780049248504,0.004445437347742637,Best: Bovada,2025-11-29
+2025-11-29T15:00:00Z,Soccer,soccer_epl,Brentford vs Burnley,Moneyline,Away Win,6.75,0.4294639669074778,0.21177243954184855,0.021020028857972654,Best: BetRivers,2025-11-29
+2025-11-29T15:00:00Z,Soccer,soccer_epl,Manchester City vs Leeds United,Moneyline,Home Win,1.27,0.13521934138644554,0.8938734971546815,0.1493508454020853,Best: BetMGM,2025-11-29
+2025-11-29T17:30:00Z,Soccer,soccer_epl,Everton vs Newcastle United,Moneyline,Away Win,2.63,0.19143467993754637,0.45301698856940925,0.03233588090168755,Best: BetOnline.ag,2025-11-29
+2025-11-29T20:00:00Z,Soccer,soccer_epl,Tottenham Hotspur vs Fulham,Moneyline,Home Win,2.32,0.2439244273962451,0.536174322153554,0.05203345377969671,Best: LowVig.ag,2025-11-29
+2025-11-30T14:05:00Z,Soccer,soccer_epl,Nottingham Forest vs Brighton and Hove Albion,Moneyline,Home Win,2.76,0.08459954493585675,0.39297084961444084,0.013556072820903485,Best: Bovada,2025-11-29
+2025-11-30T14:05:00Z,Soccer,soccer_epl,West Ham United vs Liverpool,Moneyline,Draw,4.35,0.10405382760771031,0.2538054776109679,0.008349598673932673,Best: Bovada,2025-11-29
+2025-11-30T16:30:00Z,Soccer,soccer_epl,Chelsea vs Arsenal,Moneyline,Away Win,2.25,0.16826799955305916,0.5192302220235818,0.038400770289053365,Best: FanDuel,2025-11-29
+2025-12-02T19:30:00Z,Soccer,soccer_epl,Bournemouth vs Everton,Moneyline,Away Win,3.9,0.3415179958312671,0.3439789732900685,0.03274985067701369,Best: Bovada,2025-11-29
+2025-12-02T19:30:00Z,Soccer,soccer_epl,Fulham vs Manchester City,Moneyline,Away Win,1.64,0.25921757799218925,0.7678155963367008,0.1175562115423404,Best: Bovada,2025-11-29
+2025-12-02T20:15:00Z,Soccer,soccer_epl,Newcastle United vs Tottenham Hotspur,Moneyline,Away Win,4.48,0.285110810352986,0.2868550915966486,0.023316130994748448,Best: LowVig.ag,2025-11-29
+2025-12-03T19:30:00Z,Soccer,soccer_epl,Arsenal vs Brentford,Moneyline,Draw,5.75,0.12081828614790036,0.1949249193300696,0.007179682901126422,Best: LowVig.ag,2025-11-29
+2025-12-03T19:30:00Z,Soccer,soccer_epl,Arsenal vs Brentford,Moneyline,Away Win,10.5,0.5542127114549433,0.14802025823380413,0.01646717419558893,Best: FanDuel,2025-11-29
+2025-12-03T19:30:00Z,Soccer,soccer_epl,Brighton and Hove Albion vs Aston Villa,Moneyline,Away Win,3.3,0.3338238505393196,0.40418904561797564,0.04007329254772174,Best: BetUS,2025-11-29
+2025-12-03T19:30:00Z,Soccer,soccer_epl,Burnley vs Crystal Palace,Moneyline,Draw,3.96,0.06185786852674968,0.2681459263956439,0.005677108187811442,Best: LowVig.ag,2025-11-29
+2025-12-03T20:15:00Z,Soccer,soccer_epl,Leeds United vs Chelsea,Moneyline,Away Win,1.8,0.3000613618258723,0.7222563121254846,0.10815405647379579,Best: Bovada,2025-11-29
+2025-11-29T13:02:00Z,Soccer,soccer_spain_la_liga,Mallorca vs CA Osasuna,Moneyline,Home Win,2.47,0.1636192647750494,0.4711009169129754,0.0308950066674798,Best: LowVig.ag,2025-11-29
+2025-11-29T17:30:00Z,Soccer,soccer_spain_la_liga,Levante vs Athletic Bilbao,Moneyline,Away Win,2.2,0.05036030278976167,0.47743650126807347,0.011739782436119802,Best: BetMGM,2025-11-29
+2025-11-30T13:00:00Z,Soccer,soccer_spain_la_liga,Real Sociedad vs Villarreal,Moneyline,Home Win,2.85,0.38519644799443875,0.4860338414015575,0.06012624430888369,Best: DraftKings,2025-11-29
+2025-11-30T15:15:00Z,Soccer,soccer_spain_la_liga,Sevilla vs Real Betis,Moneyline,Home Win,2.95,0.1294255714674848,0.3828561259211813,0.01880626314556603,Best: DraftKings,2025-11-29
+2025-11-30T17:30:00Z,Soccer,soccer_spain_la_liga,Celta Vigo vs Espanyol,Moneyline,Home Win,2.05,0.10054614971071651,0.536851780346691,0.026648317656658836,Best: LowVig.ag,2025-11-29
+2025-11-30T20:00:00Z,Soccer,soccer_spain_la_liga,Girona vs Real Madrid,Moneyline,Home Win,6.6,0.7689566595141955,0.2680237362900296,0.03951174268584724,Best: BetOnline.ag,2025-11-29
+2025-11-30T20:00:00Z,Soccer,soccer_spain_la_liga,Girona vs Real Madrid,Moneyline,Draw,5.1,0.32354035044822527,0.25951771577416183,0.022706852782822463,Best: BetRivers,2025-11-29
+2025-12-01T20:00:00Z,Soccer,soccer_spain_la_liga,Rayo Vallecano vs Valencia,Moneyline,Away Win,4.4,0.6758884623900108,0.38088374145227516,0.05553063485328754,Best: BetRivers,2025-11-29
+2025-12-03T18:00:00Z,Soccer,soccer_spain_la_liga,Athletic Bilbao vs Real Madrid,Moneyline,Draw,4.05,0.11154056430895642,0.27445446032319915,0.010637271370756724,Best: BetUS,2025-11-29
+2025-12-06T13:00:00Z,Soccer,soccer_spain_la_liga,Villarreal vs Getafe,Moneyline,Away Win,6.4,0.33018232806388825,0.20784098875998253,0.01703201382976404,Best: BetRivers,2025-11-29
+2025-12-06T15:15:00Z,Soccer,soccer_spain_la_liga,Alavés vs Real Sociedad,Moneyline,Away Win,2.88,0.3517473260554842,0.469356710435932,0.052792069379479084,Best: BetRivers,2025-11-29
+2025-12-06T17:30:00Z,Soccer,soccer_spain_la_liga,Real Betis vs Barcelona,Moneyline,Home Win,4.12,0.3567310110591191,0.3293036434609512,0.032376614754674106,Best: LowVig.ag,2025-11-29
+2025-12-07T13:00:00Z,Soccer,soccer_spain_la_liga,Elche CF vs Girona,Moneyline,Away Win,3.55,0.7666710694074004,0.4976538223682818,0.08022212665414596,Best: BetRivers,2025-11-29
+2025-12-07T17:30:00Z,Soccer,soccer_spain_la_liga,Espanyol vs Rayo Vallecano,Moneyline,Home Win,2.4,0.06019166895763828,0.44174652873234926,0.011983628313598518,Best: FanDuel,2025-11-29
+2025-12-07T17:30:00Z,Soccer,soccer_spain_la_liga,Espanyol vs Rayo Vallecano,Moneyline,Draw,3.69,0.12486891144717394,0.3048425234274184,0.012938443285847763,Best: LowVig.ag,2025-11-29
+2025-12-07T20:00:00Z,Soccer,soccer_spain_la_liga,Real Madrid vs Celta Vigo,Moneyline,Home Win,1.36,0.14414654707449825,0.8412842257900721,0.11435005234675662,Best: Bovada,2025-11-29
+2025-12-08T20:00:00Z,Soccer,soccer_spain_la_liga,CA Osasuna vs Levante,Moneyline,Draw,3.55,0.07935842914422553,0.30404462792795084,0.008460973277263396,Best: LowVig.ag,2025-11-29
+2025-11-29T14:30:00Z,Soccer,soccer_germany_bundesliga,Union Berlin vs 1. FC Heidenheim,Moneyline,Away Win,5.6,0.6329935011161398,0.29160598234216784,0.0378681361771037,Best: BetOnline.ag,2025-11-29
+2025-11-29T14:30:00Z,Soccer,soccer_germany_bundesliga,TSG Hoffenheim vs Augsburg,Moneyline,Away Win,4.55,0.19046456334420725,0.26164056337235325,0.015060401475558611,Best: BetOnline.ag,2025-11-29
+2025-11-29T14:30:00Z,Soccer,soccer_germany_bundesliga,Bayern Munich vs FC St. Pauli,Moneyline,Draw,10.75,0.35919728664423856,0.12643695689713846,0.009967327350164305,Best: LowVig.ag,2025-11-29
+2025-11-29T14:30:00Z,Soccer,soccer_germany_bundesliga,Bayern Munich vs FC St. Pauli,Moneyline,Away Win,26.0,0.3492680785879798,0.051894926099537685,0.003779803096123991,Best: Bovada,2025-11-29
+2025-11-29T17:30:00Z,Soccer,soccer_germany_bundesliga,Bayer Leverkusen vs Borussia Dortmund,Moneyline,Home Win,2.62,0.4292482948673375,0.5455146163615792,0.07654253725276323,Best: BetUS,2025-11-29
+2025-11-30T16:30:00Z,Soccer,soccer_germany_bundesliga,Eintracht Frankfurt vs VfL Wolfsburg,Moneyline,Draw,4.33,0.18011538195514687,0.2725439681189716,0.01576958536385053,Best: BetMGM,2025-11-29
+2025-11-30T16:30:00Z,Soccer,soccer_germany_bundesliga,Eintracht Frankfurt vs VfL Wolfsburg,Moneyline,Away Win,4.34,0.10724123979427636,0.2551247096300176,0.009361146972280913,Best: LowVig.ag,2025-11-29
+2025-11-30T18:30:00Z,Soccer,soccer_germany_bundesliga,SC Freiburg vs FSV Mainz 05,Moneyline,Away Win,4.35,0.056461111889672067,0.24286462342291315,0.00466889516326027,Best: LowVig.ag,2025-11-29
+2025-12-06T14:30:00Z,Soccer,soccer_germany_bundesliga,1. FC Heidenheim vs SC Freiburg,Moneyline,Home Win,3.75,0.6880673133205684,0.45015128355215156,0.06916243055032353,Best: Bovada,2025-11-29
+2025-12-06T14:30:00Z,Soccer,soccer_germany_bundesliga,1. FC Heidenheim vs SC Freiburg,Moneyline,Draw,3.6,0.0536927930867368,0.29269244252409354,0.005708403480753281,Best: BetMGM,2025-11-29
+2025-12-06T14:30:00Z,Soccer,soccer_germany_bundesliga,Augsburg vs Bayer Leverkusen,Moneyline,Away Win,1.9,0.4333805986935635,0.754410841417665,0.14260020547432625,Best: Bovada,2025-11-29
+2025-12-06T14:30:00Z,Soccer,soccer_germany_bundesliga,VfB Stuttgart vs Bayern Munich,Moneyline,Home Win,6.0,0.784050478168701,0.29734174636145017,0.04189652082238294,Best: FanDuel,2025-11-29
+2025-12-06T14:30:00Z,Soccer,soccer_germany_bundesliga,VfB Stuttgart vs Bayern Munich,Moneyline,Draw,5.27,0.35405861614039447,0.2569371188122191,0.022153953130183018,Best: BetOnline.ag,2025-11-29
+2025-12-06T17:30:00Z,Soccer,soccer_germany_bundesliga,RB Leipzig vs Eintracht Frankfurt,Moneyline,Home Win,1.95,0.36953050567911006,0.7023233362456974,0.11457861365446902,Best: BetMGM,2025-11-29
+2025-12-07T16:30:00Z,Soccer,soccer_germany_bundesliga,Borussia Dortmund vs TSG Hoffenheim,Moneyline,Home Win,1.59,0.21552740220123634,0.7644826428938593,0.09988875584102692,Best: Bovada,2025-11-29
+2025-11-29T14:00:00Z,Soccer,soccer_italy_serie_a,Genoa vs Hellas Verona,Moneyline,Away Win,4.7,0.14201886431061617,0.24298273708736512,0.010766258683601614,Best: BetUS,2025-11-29
+2025-11-29T17:00:00Z,Soccer,soccer_italy_serie_a,Juventus vs Cagliari,Moneyline,Draw,6.15,0.6652003583169266,0.2707642859051913,0.0363147406453143,Best: LowVig.ag,2025-11-29
+2025-11-29T17:00:00Z,Soccer,soccer_italy_serie_a,Juventus vs Cagliari,Moneyline,Away Win,12.5,0.6779832215914086,0.1342386577273127,0.01657520114217552,Best: LowVig.ag,2025-11-29
+2025-11-29T19:45:00Z,Soccer,soccer_italy_serie_a,AC Milan vs Lazio,Moneyline,Draw,3.9,0.40019120489349946,0.35902338587012805,0.03935832258083158,Best: Bovada,2025-11-29
+2025-11-30T11:30:00Z,Soccer,soccer_italy_serie_a,Lecce vs Torino,Moneyline,Away Win,2.67,0.30658727644467776,0.48935853050362466,0.0514980829112037,Best: LowVig.ag,2025-11-29
+2025-11-30T17:00:00Z,Soccer,soccer_italy_serie_a,Atalanta BC vs Fiorentina,Moneyline,Away Win,5.1,0.41989728031981577,0.27841123143525803,0.028353506150930307,Best: FanDuel,2025-11-29
+2025-11-30T19:45:00Z,Soccer,soccer_italy_serie_a,AS Roma vs Napoli,Moneyline,Home Win,2.67,0.07734260574924123,0.4034991032768694,0.012607430476949438,Best: LowVig.ag,2025-11-29
+2025-12-06T14:00:00Z,Soccer,soccer_italy_serie_a,Sassuolo vs Fiorentina,Moneyline,Away Win,2.7,0.47221822903339894,0.5452660107531107,0.07468737218562299,Best: FanDuel,2025-11-29
+2025-12-06T19:45:00Z,Soccer,soccer_italy_serie_a,Hellas Verona vs Atalanta BC,Moneyline,Home Win,4.6,0.29864148256353995,0.28231336577468263,0.023035078819895513,Best: BetRivers,2025-11-29
+2025-12-07T11:30:00Z,Soccer,soccer_italy_serie_a,Cremonese vs Lecce,Moneyline,Home Win,2.7,0.15648693829017923,0.42832849566302933,0.026364664833900087,Best: FanDuel,2025-11-29
+2025-12-07T17:00:00Z,Soccer,soccer_italy_serie_a,Lazio vs Bologna,Moneyline,Home Win,2.7,0.23355575565343623,0.45687250209386526,0.03882390569240283,Best: FanDuel,2025-11-29
+2025-12-08T17:00:00Z,Soccer,soccer_italy_serie_a,Udinese vs Genoa,Moneyline,Home Win,2.47,0.0812509799419543,0.43775343317488025,0.01564098704261819,Best: BetOnline.ag,2025-11-29
+2025-12-08T19:45:00Z,Soccer,soccer_italy_serie_a,Torino vs AC Milan,Moneyline,Home Win,4.6,0.06754345347898338,0.23207466379977904,0.005210535295681019,Best: LowVig.ag,2025-11-29
+2025-11-29T16:00:00Z,Soccer,soccer_france_ligue_one,AS Monaco vs Paris Saint Germain,Moneyline,Home Win,4.9,0.4395142450709868,0.29377841736142585,0.03159416154438625,Best: Bovada,2025-11-29
+2025-11-29T20:05:00Z,Soccer,soccer_france_ligue_one,Marseille vs Toulouse,Moneyline,Draw,4.3,0.20316897853846916,0.2798067391949928,0.017041164394734788,Best: Bovada,2025-11-29
+2025-11-29T20:05:00Z,Soccer,soccer_france_ligue_one,Marseille vs Toulouse,Moneyline,Away Win,6.0,0.37494079391900925,0.22915679898650154,0.020756231178911136,Best: Bovada,2025-11-29
+2025-11-30T14:00:00Z,Soccer,soccer_france_ligue_one,Strasbourg vs Brest,Moneyline,Draw,3.87,0.07554132494936794,0.27791765502567645,0.007541209274343665,Best: LowVig.ag,2025-11-29
+2025-11-30T14:00:00Z,Soccer,soccer_france_ligue_one,Strasbourg vs Brest,Moneyline,Away Win,4.49,0.8268556867782402,0.40687209059649,0.06788011705524714,Best: LowVig.ag,2025-11-29
+2025-11-30T16:15:00Z,Soccer,soccer_france_ligue_one,Angers vs RC Lens,Moneyline,Away Win,1.77,0.25431692002825845,0.7086536271346093,0.08788037282187326,Best: DraftKings,2025-11-29
+2025-11-30T16:15:00Z,Soccer,soccer_france_ligue_one,Le Havre vs Lille,Moneyline,Away Win,1.87,0.17139056238793438,0.6264120654480932,0.05619105815775307,Best: DraftKings,2025-11-29
+2025-11-30T16:15:00Z,Soccer,soccer_france_ligue_one,Lorient vs Nice,Moneyline,Away Win,3.08,0.759388474842672,0.5712300242995688,0.1027997926233911,Best: LowVig.ag,2025-11-29
+2025-11-30T19:45:00Z,Soccer,soccer_france_ligue_one,Lyon vs Nantes,Moneyline,Away Win,8.0,0.3680646609782885,0.17100808262228606,0.014837761027000195,Best: FanDuel,2025-11-29
+2025-12-05T20:00:00Z,Soccer,soccer_france_ligue_one,Lille vs Marseille,Moneyline,Home Win,2.61,0.14018279975814152,0.4368516474169125,0.02460236515556182,Best: Bovada,2025-11-29
+2025-12-06T16:00:00Z,Soccer,soccer_france_ligue_one,Nantes vs RC Lens,Moneyline,Away Win,1.67,0.05671240169344771,0.6327619171817053,0.02304627376505279,Best: DraftKings,2025-11-29
+2025-12-06T18:00:00Z,Soccer,soccer_france_ligue_one,Toulouse vs Strasbourg,Moneyline,Home Win,2.31,0.05376579640371948,0.45617566943883964,0.011412306074672257,Best: Bovada,2025-11-29
+2025-12-06T20:05:00Z,Soccer,soccer_france_ligue_one,Paris Saint Germain vs Rennes,Moneyline,Draw,6.0,0.5392090316149243,0.2565348386024874,0.029717524650876875,Best: DraftKings,2025-11-29
+2025-12-06T20:05:00Z,Soccer,soccer_france_ligue_one,Paris Saint Germain vs Rennes,Moneyline,Away Win,9.5,0.8280924335338353,0.19243078247724582,0.026846357473609677,Best: BetRivers,2025-11-29
+2025-12-07T14:00:00Z,Soccer,soccer_france_ligue_one,Nice vs Angers,Moneyline,Home Win,1.74,0.26426603866850273,0.7265896773956912,0.09574637972853259,Best: DraftKings,2025-11-29
+2025-12-07T16:15:00Z,Soccer,soccer_france_ligue_one,Auxerre vs Metz,Moneyline,Away Win,3.7,0.07174697517198725,0.2896613446410776,0.007383180955562404,Best: DraftKings,2025-11-29
+2025-12-07T19:45:00Z,Soccer,soccer_france_ligue_one,Lorient vs Lyon,Moneyline,Draw,3.6,0.17403464574504857,0.32612073492918014,0.019375574496423475,Best: BetRivers,2025-11-29
+2025-12-07T19:45:00Z,Soccer,soccer_france_ligue_one,Lorient vs Lyon,Moneyline,Away Win,2.25,0.23382033848715733,0.548364594883181,0.05414576508547171,Best: FanDuel,2025-11-29
 2025-11-30T18:00:00Z,NFL,NFL,Atlanta Falcons @ New York Jets,Moneyline,Home Win,2.26,0.41249999999999987,0.625,0.08184523809523808,Best: FanDuel,2025-11-29
 2025-11-30T18:00:00Z,NFL,NFL,Los Angeles Rams @ Carolina Panthers,ARBITRAGE,ALL,0.0,0.0009345794392523331,1.0,0.0,Home: FanDuel (6.3) | Away: LowVig.ag (1.19),2025-11-29
-2025-11-30T18:00:00Z,NFL,NFL,San Francisco 49ers @ Cleveland Browns,Moneyline,Home Win,3.05,0.90625,0.625,0.11051829268292684,Best: FanDuel,2025-11-29
+2025-11-30T18:00:00Z,NFL,NFL,San Francisco 49ers @ Cleveland Browns,Moneyline,Home Win,3.0,0.875,0.625,0.109375,Best: Bovada,2025-11-29
 2025-11-30T18:00:00Z,NFL,NFL,Jacksonville Jaguars @ Tennessee Titans,Moneyline,Home Win,3.4,1.125,0.625,0.1171875,Best: BetUS,2025-11-29
 2025-11-30T21:25:00Z,NFL,NFL,Buffalo Bills @ Pittsburgh Steelers,Moneyline,Home Win,2.57,0.60625,0.625,0.09653662420382166,Best: BetOnline.ag,2025-11-29
 2025-12-01T01:20:00Z,NFL,NFL,Denver Broncos @ Washington Commanders,Moneyline,Home Win,3.25,1.03125,0.625,0.11458333333333333,Best: BetMGM,2025-11-29
