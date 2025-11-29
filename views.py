@@ -1,9 +1,10 @@
 # views.py
-# The "Vegas Edition" Layouts (v53.0)
-# Fixes: Center Aligned Tables, Always-Visible Metrics
+# The "Vegas Edition" Layouts (v53.1)
+# Fixes: Added missing numpy import
 
 import streamlit as st
 import pandas as pd
+import numpy as np  # <--- THIS WAS MISSING
 import plotly.graph_objects as go
 from itertools import combinations
 import utils
@@ -137,83 +138,4 @@ def render_market_map():
         if not df.empty:
             df['Implied'] = 1 / df['Odds']
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', name='Fair Value', line=dict(color='#444', dash='dash')))
-            fig.add_trace(go.Scatter(x=df['Implied'], y=df['Confidence'], mode='markers', marker=dict(size=df['Edge']*150 + 10, color=df['Edge'], colorscale='Viridis', showscale=True), text=df['Match'] + '<br>' + df['Bet'], hoverinfo='text'))
-            fig.update_layout(template="plotly_dark", height=600, xaxis_title="Implied Prob", yaxis_title="Model Prob")
-            st.plotly_chart(fig, use_container_width=True)
-        else: st.info("No valid bets for Market Map.")
-    else: st.info("No data loaded.")
-
-def render_bet_tracker(bankroll):
-    st.markdown('<p class="gradient-text">🎟️ Bet Slip</p>', unsafe_allow_html=True)
-    if st.session_state.bet_slip:
-        slip_df = pd.DataFrame(st.session_state.bet_slip)
-        total_stake = 0; potential_return = 0
-        for i, bet in slip_df.iterrows():
-            st.markdown(f"""<div class="bet-ticket" style="border-left: 4px solid #00C9FF;"><div style="display:flex; justify-content:space-between;"><div style="font-weight:bold;">{bet['Match']}</div><div style="color:#00e676;">{bet['Odds']:.2f}</div></div><div style="font-size:0.9em; color:#ccc;">{bet['Bet']}</div><div style="margin-top:10px; font-size:0.8em; color:#888;">Stake: <span style="color:white;">${bet.get('User_Stake', 0):.2f}</span></div></div>""", unsafe_allow_html=True)
-            total_stake += bet.get('User_Stake', 0); potential_return += bet.get('User_Stake', 0) * bet['Odds']
-        st.divider(); c1, c2 = st.columns(2)
-        c1.metric("Total Stake", f"${total_stake:.2f}"); c2.metric("Potential Return", f"${potential_return:.2f}")
-        if st.button("Clear Slip"): st.session_state.bet_slip = []; st.rerun()
-    else: st.info("Your bet slip is empty.")
-
-def render_history():
-    st.markdown('<p class="gradient-text">📜 History</p>', unsafe_allow_html=True)
-    
-    # --- CSS FOR CENTER ALIGNMENT ---
-    st.markdown("""
-    <style>
-        th { text-align: center !important; }
-        td { text-align: center !important; }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    df = utils.load_data(utils.HISTORY_URL)
-    
-    if isinstance(df, pd.DataFrame):
-        if 'Result' not in df.columns:
-            st.info("No results settled yet.")
-            st.dataframe(df)
-            return
-
-        # --- METRICS (ALWAYS VISIBLE) ---
-        settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
-        
-        if not settled.empty:
-            total_profit = settled['Profit'].sum()
-            win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
-            total_bets = len(settled)
-        else:
-            total_profit = 0.0
-            win_rate = 0.0
-            total_bets = 0
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Model Profit", f"{total_profit:.2f}u")
-        c2.metric("Model Accuracy", f"{win_rate:.1%}")
-        c3.metric("Total Bets Settled", total_bets)
-        st.divider()
-
-        # --- TABLE DISPLAY ---
-        display_df = df.copy()
-        display_df['Result'] = display_df['Result'].fillna('Pending')
-        display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
-        
-        # Fix Profit Display
-        display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
-
-        # Rename and Select Columns
-        if 'Formatted_Date' in display_df.columns:
-            display_df = display_df.rename(columns={'Formatted_Date': 'Match Time'})
-        elif 'Date' in display_df.columns:
-            display_df = display_df.rename(columns={'Date': 'Match Time'})
-            
-        cols = ['Match Time', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
-        cols = [c for c in cols if c in display_df.columns]
-        
-        st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
-        st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
-    else: st.info("No history found.")
-
-def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v53.0 (Enterprise Edition)")
+            fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='line
