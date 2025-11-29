@@ -1,6 +1,6 @@
 # views.py
-# The "Unlimited" Layouts (v65.0)
-# Features: Dynamic Smart Picks (3-4 slots), 5-Leg Parlays, Tilt Control
+# The "Unlimited" Layouts (v65.1)
+# Fixes: Relaxed filters so "Smart Picks" always show up
 
 import streamlit as st
 import pandas as pd
@@ -14,7 +14,7 @@ def render_dashboard(bankroll, kelly_multiplier):
     
     df = utils.load_data(utils.LATEST_URL)
     
-    # --- 1. TILT CONTROL (Psychological Insurance) ---
+    # --- 1. TILT CONTROL ---
     with st.expander("🛡️ Risk & Tilt Control", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
@@ -54,8 +54,9 @@ def render_dashboard(bankroll, kelly_multiplier):
         # --- DYNAMIC SMART PICKS ENGINE ---
         st.markdown("### 🔥 Smart Daily Picks")
         
-        # Filter for viable candidates (No Arbs, Odds < 4.0 for reliability)
-        candidates = df[(df['Odds'] < 4.0) & (df['Confidence'] > 0.5) & (df['Bet Type'] != 'ARBITRAGE')].copy()
+        # *** FIX: Relaxed filters so this section always appears ***
+        # We removed (df['Odds'] < 4.0) so it shows high-odds bets if that's all we have.
+        candidates = df[df['Bet Type'] != 'ARBITRAGE'].copy()
 
         if not candidates.empty:
             smart_picks = []
@@ -64,18 +65,17 @@ def render_dashboard(bankroll, kelly_multiplier):
             banker = candidates.sort_values('Confidence', ascending=False).iloc[0]
             smart_picks.append({"Label": "🛡️ The Banker", "Row": banker, "Color": "#00e676", "Reason": "Highest Win Probability"})
             
-            # Slot 2: THE VALUE PLAY (Highest Edge, different from Banker)
+            # Slot 2: THE VALUE PLAY (Highest Edge)
             remaining = candidates[candidates['Match'] != banker['Match']]
             if not remaining.empty:
                 value_play = remaining.sort_values('Edge', ascending=False).iloc[0]
                 smart_picks.append({"Label": "🚀 The Value Play", "Row": value_play, "Color": "#00C9FF", "Reason": "Maximum Mathematical Edge"})
             
-            # Slot 3: THE DIVERSIFIER (Different Sport if possible)
+            # Slot 3: THE DIVERSIFIER
             if len(smart_picks) == 2:
                 used_matches = [p['Row']['Match'] for p in smart_picks]
                 used_sports = [p['Row']['Sport'] for p in smart_picks]
                 
-                # Try to find a different sport
                 diversifier_candidates = candidates[~candidates['Match'].isin(used_matches)]
                 diff_sport = diversifier_candidates[~diversifier_candidates['Sport'].isin(used_sports)]
                 
@@ -83,11 +83,10 @@ def render_dashboard(bankroll, kelly_multiplier):
                     div_pick = diff_sport.sort_values('Edge', ascending=False).iloc[0]
                     smart_picks.append({"Label": f"⚖️ {div_pick['Sport']} Diversifier", "Row": div_pick, "Color": "#FFD700", "Reason": "Portfolio Balance"})
                 elif not diversifier_candidates.empty:
-                    # If no different sport, just take next best edge
                     div_pick = diversifier_candidates.sort_values('Edge', ascending=False).iloc[0]
                     smart_picks.append({"Label": "🔥 Heat Check", "Row": div_pick, "Color": "#FFD700", "Reason": "Strong Momentum"})
 
-            # Slot 4: THE UNDERDOG (If a good one exists)
+            # Slot 4: THE UNDERDOG
             used_matches = [p['Row']['Match'] for p in smart_picks]
             dogs = candidates[(~candidates['Match'].isin(used_matches)) & (candidates['Odds'] > 2.2)]
             if not dogs.empty:
@@ -115,7 +114,7 @@ def render_dashboard(bankroll, kelly_multiplier):
                     </div>
                     """, unsafe_allow_html=True)
         else:
-            st.info("No bets meet the strict criteria for Smart Picks today.")
+            st.info("No bets available for Smart Picks.")
 
         # --- THE MAIN FEED ---
         st.markdown("---")
@@ -188,17 +187,16 @@ def render_dashboard(bankroll, kelly_multiplier):
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
         
-        parlay_candidates = df[(df['Odds'] > 1.1) & (df['Odds'] < 3.0) & (df['Bet Type'] != 'ARBITRAGE')]
+        # Relaxed parlay filters to ensure it shows up
+        parlay_candidates = df[(df['Odds'] > 1.1) & (df['Bet Type'] != 'ARBITRAGE')]
         
         if len(parlay_candidates) >= 2:
-            # Sort by Edge for Value, Confidence for Safe
             value_legs = parlay_candidates.sort_values('Edge', ascending=False).to_dict('records')
             safe_legs = parlay_candidates.sort_values('Confidence', ascending=False).to_dict('records')
 
             tab1, tab2, tab3, tab4 = st.tabs(["🛡️ Safe (2-Leg)", "🚀 Value (3-Leg)", "🎰 Lotto (4-Leg)", "☄️ Hail Mary (5-Leg)"])
 
             def render_parlay_card(legs_source, num_legs, title):
-                # Limit input list to top 12 to prevent crashing on combinations
                 pool = legs_source[:12]
                 if len(pool) < num_legs:
                     st.info(f"Not enough bets found for a {num_legs}-leg parlay.")
@@ -208,9 +206,7 @@ def render_dashboard(bankroll, kelly_multiplier):
                 best_score = -1
                 
                 for combo in combinations(pool, num_legs):
-                    # Ensure unique matches
                     if len(set([c['Match'] for c in combo])) == num_legs:
-                        # Score = Combined Edge
                         score = (np.prod([1 + c['Edge'] for c in combo])) - 1
                         if score > best_score:
                             best_score = score
@@ -219,8 +215,6 @@ def render_dashboard(bankroll, kelly_multiplier):
                 if best_combo:
                     tot_odds = np.prod([c['Odds'] for c in best_combo])
                     tot_prob = np.prod([c['Confidence'] for c in best_combo])
-                    
-                    # Kelly for Parlay
                     kelly_stake_pct = (best_score / (tot_odds - 1)) * kelly_multiplier if tot_odds > 1 else 0
                     kelly_stake_cash = bankroll * kelly_stake_pct
                     
@@ -242,7 +236,7 @@ def render_dashboard(bankroll, kelly_multiplier):
             with tab1: render_parlay_card(safe_legs, 2, "Bankroll Builder")
             with tab2: render_parlay_card(value_legs, 3, "Value Stack")
             with tab3: render_parlay_card(value_legs, 4, "Lotto Ticket")
-            with tab4: render_parlay_card(value_legs, 5, "Hail Mary") # NEW 5-Leg Option
+            with tab4: render_parlay_card(value_legs, 5, "Hail Mary")
 
         else:
             st.info("Not enough value bets to build a parlay.")
@@ -270,9 +264,7 @@ def render_market_map():
 
 def render_bet_tracker(bankroll):
     st.markdown('<p class="gradient-text">🎟️ Bet Slip</p>', unsafe_allow_html=True)
-    # Allow decimal bankroll input
     bankroll = st.number_input("Your Bankroll ($)", value=float(bankroll), min_value=0.0, step=0.01, format="%.2f", key="tracker_bankroll")
-    
     if st.session_state.bet_slip:
         slip_df = pd.DataFrame(st.session_state.bet_slip)
         total_stake = 0; potential_return = 0
@@ -305,4 +297,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v65.0 (Unlimited Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v65.1 (Unlimited Edition)")
