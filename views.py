@@ -1,6 +1,6 @@
 # views.py
-# The "Vegas Edition" Layouts (v49.1)
-# Fixes: Date Display in History
+# The "Vegas Edition" Layouts (v50.0)
+# Fixes: Duplicate Date Columns, Clean History Table
 
 import streamlit as st
 import pandas as pd
@@ -167,7 +167,7 @@ def render_history():
             st.dataframe(df)
             return
 
-        # Metrics
+        # Metrics (Settled Only)
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
         if not settled.empty:
             total_profit = settled['Profit'].sum()
@@ -177,23 +177,27 @@ def render_history():
             c2.metric("Win Rate", f"{win_rate:.1%}")
             st.divider()
 
-        # HTML Table
+        # --- CLEAN TABLE DISPLAY ---
         display_df = df.copy()
         display_df['Result'] = display_df['Result'].fillna('Pending')
         display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
         
-        # *** FIX: Ensure Date is displayed ***
-        # We use 'Formatted_Date' if available, otherwise 'Date'
-        if 'Formatted_Date' in display_df.columns:
-            display_df = display_df.rename(columns={'Formatted_Date': 'Date'})
+        # Fix Profit Display (Show '-' for pending)
+        display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
+
+        # *** FIX: Select ONLY the columns we want to show ***
+        # This removes the raw 'Date' and 'Date_Generated' columns
+        cols_to_show = ['Formatted_Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
         
-        cols = ['Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
         # Filter to ensure columns exist
-        cols = [c for c in cols if c in display_df.columns]
+        final_cols = [c for c in cols_to_show if c in display_df.columns]
         
-        st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
+        # Rename 'Formatted_Date' to 'Match Time' for the header
+        display_df = display_df[final_cols].rename(columns={'Formatted_Date': 'Match Time'})
+        
+        st.write(display_df.to_html(escape=False, index=False), unsafe_allow_html=True)
         st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v49.1 (Enterprise Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v50.0 (Enterprise Edition)")
