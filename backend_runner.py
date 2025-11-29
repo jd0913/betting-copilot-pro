@@ -62,13 +62,17 @@ def build_ensemble_from_genome(genome):
     return VotingClassifier(estimators=[('xgb', xgb_clf), ('rf', rf_clf), ('nn', nn_clf), ('lr', lr_clf)], voting='soft', n_jobs=-1)
 
 def evolve_and_train(X, y):
+    print("   🧬 Initiating Evolutionary Cycle...")
     current_genome = load_or_initialize_genome(); mutant_genome = mutate_genome(current_genome); tscv = TimeSeriesSplit(n_splits=3)
     champ_model = build_ensemble_from_genome(current_genome); champ_scores = cross_val_score(champ_model, X, y, cv=tscv, scoring='neg_log_loss'); champ_fitness = -champ_scores.mean()
     mutant_model = build_ensemble_from_genome(mutant_genome); mutant_scores = cross_val_score(mutant_model, X, y, cv=tscv, scoring='neg_log_loss'); mutant_fitness = -mutant_scores.mean()
     if mutant_fitness < champ_fitness:
+        print("      > 🚀 EVOLUTION! Mutant wins.")
         mutant_genome['best_score'] = mutant_fitness; mutant_genome['generation'] = current_genome['generation'] + 1; winner_genome = mutant_genome
         with open(GENOME_FILE, 'w') as f: json.dump(winner_genome, f)
-    else: winner_genome = current_genome
+    else:
+        print("      > 💀 Champion remains.")
+        winner_genome = current_genome
     final_model = build_ensemble_from_genome(winner_genome); calibrated_model = CalibratedClassifierCV(final_model, method='isotonic', cv=3); calibrated_model.fit(X, y)
     return calibrated_model
 
@@ -141,11 +145,9 @@ def calculate_soccer_features(df):
     volatility_map = {t: np.std(v[-10:]) if len(v) > 10 else 0.25 for t, v in team_variance.items()}
     return df, elo_ratings, volatility_map
 
-def train_league_brain(div_code):
-    seasons = ['2324', '2223', '2122']; 
-    try: df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/{div_code}.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
-    except: return None, None
-    if df.empty: return None, None
+def train_soccer_brain():
+    print("   > Training Soccer Brain (Darwinian)...")
+    seasons = ['2324', '2223', '2122']; df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/E0.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
     df, elo_ratings, volatility_map = calculate_soccer_features(df)
     h_stats = df[['Date', 'HomeTeam', 'FTR']].rename(columns={'HomeTeam': 'Team'}); h_stats['Points'] = h_stats['FTR'].map({'H': 3, 'D': 1, 'A': 0})
     a_stats = df[['Date', 'AwayTeam', 'FTR']].rename(columns={'AwayTeam': 'Team'}); a_stats['Points'] = a_stats['FTR'].map({'A': 3, 'D': 1, 'H': 0})
