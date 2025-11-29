@@ -1,6 +1,6 @@
 # views.py
-# The "Vegas Edition" Layouts (v49.0)
-# Fixes: ZeroDivisionError in Deep Dive, Date Display
+# The "Vegas Edition" Layouts (v49.1)
+# Fixes: Date Display in History
 
 import streamlit as st
 import pandas as pd
@@ -48,7 +48,6 @@ def render_dashboard(bankroll, kelly_multiplier):
 
         for i, row in df.iterrows():
             sport_icon = utils.get_team_emoji(row.get('Sport', 'Soccer'))
-            # *** FIX: Ensure Date is displayed ***
             match_time = row.get('Formatted_Date', 'Time TBD')
             risk_badge = utils.get_risk_badge(row)
             bookie = row.get('Info', 'Best Price')
@@ -87,12 +86,10 @@ def render_dashboard(bankroll, kelly_multiplier):
                     st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row['Odds']:.2f}</div></div>""", unsafe_allow_html=True)
                     
                     with st.expander("Details"):
-                        # *** CRITICAL FIX: Handle ZeroDivisionError for Arbitrage ***
                         if row['Odds'] > 0:
-                            implied = 1 / row['Odds']
-                            st.write(f"**Implied:** {implied:.1%}")
+                            st.write(f"**Implied:** {(1/row['Odds']):.1%}")
                         else:
-                            st.write("**Implied:** N/A (Arbitrage)")
+                            st.write("**Implied:** N/A")
                             
                         key = row['key']
                         is_in_slip = any(b['key'] == key for b in st.session_state.bet_slip)
@@ -108,7 +105,6 @@ def render_dashboard(bankroll, kelly_multiplier):
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
         
-        # Filter out Arbitrage bets (Odds 0)
         parlay_candidates = df[df['Odds'] > 1.0]
         
         if len(parlay_candidates) >= 2:
@@ -137,9 +133,7 @@ def render_market_map():
     df = utils.load_data(utils.LATEST_URL)
     if isinstance(df, pd.DataFrame):
         if 'Bet Type' in df.columns: df = df[df['Bet Type'] != 'ARBITRAGE']
-        # Filter out bad odds
         df = df[df['Odds'] > 0]
-        
         if not df.empty:
             df['Implied'] = 1 / df['Odds']
             fig = go.Figure()
@@ -166,21 +160,35 @@ def render_bet_tracker(bankroll):
 def render_history():
     st.markdown('<p class="gradient-text">📜 History</p>', unsafe_allow_html=True)
     df = utils.load_data(utils.HISTORY_URL)
+    
     if isinstance(df, pd.DataFrame):
-        if 'Result' not in df.columns: st.info("No results settled yet."); st.dataframe(df); return
-        
+        if 'Result' not in df.columns:
+            st.info("No results settled yet.")
+            st.dataframe(df)
+            return
+
+        # Metrics
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
         if not settled.empty:
-            total_profit = settled['Profit'].sum(); win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
-            c1, c2 = st.columns(2); c1.metric("Total Profit", f"{total_profit:.2f}u"); c2.metric("Win Rate", f"{win_rate:.1%}"); st.divider()
-        
+            total_profit = settled['Profit'].sum()
+            win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
+            c1, c2 = st.columns(2)
+            c1.metric("Total Profit", f"{total_profit:.2f}u")
+            c2.metric("Win Rate", f"{win_rate:.1%}")
+            st.divider()
+
+        # HTML Table
         display_df = df.copy()
         display_df['Result'] = display_df['Result'].fillna('Pending')
         display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
         
         # *** FIX: Ensure Date is displayed ***
-        cols = ['Formatted_Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
-        display_df = display_df.rename(columns={'Formatted_Date': 'Date'})
+        # We use 'Formatted_Date' if available, otherwise 'Date'
+        if 'Formatted_Date' in display_df.columns:
+            display_df = display_df.rename(columns={'Formatted_Date': 'Date'})
+        
+        cols = ['Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
+        # Filter to ensure columns exist
         cols = [c for c in cols if c in display_df.columns]
         
         st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
@@ -188,4 +196,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v49.0 (Enterprise Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v49.1 (Enterprise Edition)")
