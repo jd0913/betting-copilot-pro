@@ -1,5 +1,5 @@
 # views.py
-# The "Vegas Edition" Layouts (v45.0)
+# The "Vegas Edition" Layouts (v47.0)
 
 import streamlit as st
 import pandas as pd
@@ -82,20 +82,13 @@ def render_dashboard(bankroll, kelly_multiplier):
                     st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row['Odds']:.2f}</div></div>""", unsafe_allow_html=True)
                     
                     with st.expander("Details"):
-                        # Arb Calculator Logic
-                        if row.get('Bet Type') == 'ARBITRAGE':
-                            st.write("**Arbitrage Calculator**")
-                            total_inv = st.number_input("Total Investment", value=100, key=f"arb_{i}")
-                            # (Simplified display for arb info)
-                            st.code(row['Info'])
-                        else:
-                            st.write(f"**Implied:** {(1/row['Odds']):.1%}")
-                            key = row['key']
-                            is_in_slip = any(b['key'] == key for b in st.session_state.bet_slip)
-                            if st.checkbox("Add to Slip", value=is_in_slip, key=key):
-                                if not is_in_slip:
-                                    row_data = row.to_dict(); row_data['User_Stake'] = cash_stake
-                                    st.session_state.bet_slip.append(row_data); st.rerun()
+                        st.write(f"**Implied:** {(1/row['Odds']):.1%}")
+                        key = row['key']
+                        is_in_slip = any(b['key'] == key for b in st.session_state.bet_slip)
+                        if st.checkbox("Add to Slip", value=is_in_slip, key=key):
+                            if not is_in_slip:
+                                row_data = row.to_dict(); row_data['User_Stake'] = cash_stake
+                                st.session_state.bet_slip.append(row_data); st.rerun()
                             else:
                                 if is_in_slip:
                                     st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
@@ -151,47 +144,30 @@ def render_bet_tracker(bankroll):
     else: st.info("Your bet slip is empty.")
 
 def render_history():
-    st.markdown('<p class="gradient-text">📜 Performance Archive</p>', unsafe_allow_html=True)
+    st.markdown('<p class="gradient-text">📜 History</p>', unsafe_allow_html=True)
     df = utils.load_data(utils.HISTORY_URL)
-    
     if isinstance(df, pd.DataFrame):
-        if 'Result' not in df.columns:
-            st.info("No results settled yet.")
-            st.dataframe(df)
-            return
-
-        # Metrics
+        if 'Result' not in df.columns: st.info("No results settled yet."); st.dataframe(df); return
+        
+        # Metrics (Settled Only)
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
         if not settled.empty:
-            total_profit = settled['Profit'].sum()
-            win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Profit", f"{total_profit:.2f}u")
-            c2.metric("Win Rate", f"{win_rate:.1%}")
-            c3.metric("Total Bets", len(settled))
-            st.divider()
-
-        # HTML Table with Badges
+            total_profit = settled['Profit'].sum(); win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
+            c1, c2 = st.columns(2); c1.metric("Total Profit", f"{total_profit:.2f}u"); c2.metric("Win Rate", f"{win_rate:.1%}"); st.divider()
+        
+        # HTML Table
         display_df = df.copy()
         display_df['Result'] = display_df['Result'].fillna('Pending')
         display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
         
-        # *** FIX: Handle NaN Profit for display ***
-        if 'Profit' in display_df.columns:
-            display_df['Profit'] = display_df['Profit'].fillna(0.0)
-        
+        # *** FIX: Ensure Date is displayed ***
         cols = ['Formatted_Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
         display_df = display_df.rename(columns={'Formatted_Date': 'Date'})
-        
-        # Only show columns that actually exist
         cols = [c for c in cols if c in display_df.columns]
         
         st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
-        
         st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
-        
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v50.0 (Enterprise Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v47.0 (Enterprise Edition)")
