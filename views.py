@@ -1,6 +1,6 @@
 # views.py
-# The "Unlimited" Layouts (v65.1)
-# Fixes: Relaxed filters so "Smart Picks" always show up
+# The "Strict Parlay" Layouts (v66.0)
+# Fixes: Enforces strict odds limits on "Safe" parlays to prevent high-risk suggestions.
 
 import streamlit as st
 import pandas as pd
@@ -51,72 +51,55 @@ def render_dashboard(bankroll, kelly_multiplier):
         """
         st.markdown(kpi_html, unsafe_allow_html=True)
 
-        # --- DYNAMIC SMART PICKS ENGINE ---
+        # --- DYNAMIC SMART PICKS ---
         st.markdown("### 🔥 Smart Daily Picks")
-        
-        # *** FIX: Relaxed filters so this section always appears ***
-        # We removed (df['Odds'] < 4.0) so it shows high-odds bets if that's all we have.
         candidates = df[df['Bet Type'] != 'ARBITRAGE'].copy()
 
         if not candidates.empty:
             smart_picks = []
             
-            # Slot 1: THE BANKER (Highest Confidence)
-            banker = candidates.sort_values('Confidence', ascending=False).iloc[0]
-            smart_picks.append({"Label": "🛡️ The Banker", "Row": banker, "Color": "#00e676", "Reason": "Highest Win Probability"})
+            # Slot 1: THE BANKER (Strict: Odds < 2.0, High Conf)
+            banker_candidates = candidates[candidates['Odds'] < 2.0]
+            if not banker_candidates.empty:
+                banker = banker_candidates.sort_values('Confidence', ascending=False).iloc[0]
+                smart_picks.append({"Label": "🛡️ The Banker", "Row": banker, "Color": "#00e676", "Reason": "Safe Favorite"})
             
-            # Slot 2: THE VALUE PLAY (Highest Edge)
-            remaining = candidates[candidates['Match'] != banker['Match']]
+            # Slot 2: THE VALUE PLAY
+            remaining = candidates[~candidates['Match'].isin([p['Row']['Match'] for p in smart_picks])]
             if not remaining.empty:
                 value_play = remaining.sort_values('Edge', ascending=False).iloc[0]
-                smart_picks.append({"Label": "🚀 The Value Play", "Row": value_play, "Color": "#00C9FF", "Reason": "Maximum Mathematical Edge"})
+                smart_picks.append({"Label": "🚀 The Value Play", "Row": value_play, "Color": "#00C9FF", "Reason": "Max Edge"})
             
-            # Slot 3: THE DIVERSIFIER
-            if len(smart_picks) == 2:
-                used_matches = [p['Row']['Match'] for p in smart_picks]
-                used_sports = [p['Row']['Sport'] for p in smart_picks]
-                
-                diversifier_candidates = candidates[~candidates['Match'].isin(used_matches)]
-                diff_sport = diversifier_candidates[~diversifier_candidates['Sport'].isin(used_sports)]
-                
-                if not diff_sport.empty:
-                    div_pick = diff_sport.sort_values('Edge', ascending=False).iloc[0]
-                    smart_picks.append({"Label": f"⚖️ {div_pick['Sport']} Diversifier", "Row": div_pick, "Color": "#FFD700", "Reason": "Portfolio Balance"})
-                elif not diversifier_candidates.empty:
-                    div_pick = diversifier_candidates.sort_values('Edge', ascending=False).iloc[0]
-                    smart_picks.append({"Label": "🔥 Heat Check", "Row": div_pick, "Color": "#FFD700", "Reason": "Strong Momentum"})
-
-            # Slot 4: THE UNDERDOG
+            # Slot 3: DIVERSIFIER
             used_matches = [p['Row']['Match'] for p in smart_picks]
-            dogs = candidates[(~candidates['Match'].isin(used_matches)) & (candidates['Odds'] > 2.2)]
-            if not dogs.empty:
-                dog_pick = dogs.sort_values('Edge', ascending=False).iloc[0]
-                smart_picks.append({"Label": "🐺 Top Underdog", "Row": dog_pick, "Color": "#ff4b4b", "Reason": "High Upside Value"})
+            remaining = candidates[~candidates['Match'].isin(used_matches)]
+            if not remaining.empty:
+                div_pick = remaining.sort_values('Edge', ascending=False).iloc[0]
+                smart_picks.append({"Label": "⚖️ Diversifier", "Row": div_pick, "Color": "#FFD700", "Reason": "Portfolio Balance"})
 
-            # Render Dynamic Columns
-            cols = st.columns(len(smart_picks))
-            for idx, pick in enumerate(smart_picks):
-                row = pick['Row']
-                sport_icon = utils.get_team_emoji(row.get('Sport', 'Soccer'))
-                rec_stake = bankroll * row.get('Stake', 0.01) * (kelly_multiplier / 0.25)
-                
-                with cols[idx]:
-                    st.markdown(f"""
-                    <div style="background-color: #1e2130; border: 1px solid {pick['Color']}; border-radius: 12px; padding: 15px; text-align: center; height: 100%;">
-                        <div style="color: {pick['Color']}; font-weight: bold; text-transform: uppercase; font-size: 0.8em; margin-bottom: 5px;">{pick['Label']}</div>
-                        <div style="font-size: 1.0em; font-weight: bold; margin-bottom: 5px;">{sport_icon} {row['Match']}</div>
-                        <div style="color: white; font-weight: bold; font-size: 1.1em; margin-bottom: 10px;">{row['Bet']}</div>
-                        <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 10px;">
-                            <div><div style="font-size: 0.7em; color: #888;">ODDS</div><div style="font-weight: bold; color: #fff;">{row['Odds']:.2f}</div></div>
-                            <div><div style="font-size: 0.7em; color: #888;">EDGE</div><div style="font-weight: bold; color: {pick['Color']};">{row['Edge']:.1%}</div></div>
+            if smart_picks:
+                cols = st.columns(len(smart_picks))
+                for idx, pick in enumerate(smart_picks):
+                    row = pick['Row']
+                    sport_icon = utils.get_team_emoji(row.get('Sport', 'Soccer'))
+                    rec_stake = bankroll * row.get('Stake', 0.01) * (kelly_multiplier / 0.25)
+                    with cols[idx]:
+                        st.markdown(f"""
+                        <div style="background-color: #1e2130; border: 1px solid {pick['Color']}; border-radius: 12px; padding: 15px; text-align: center; height: 100%;">
+                            <div style="color: {pick['Color']}; font-weight: bold; text-transform: uppercase; font-size: 0.8em; margin-bottom: 5px;">{pick['Label']}</div>
+                            <div style="font-size: 1.0em; font-weight: bold; margin-bottom: 5px;">{sport_icon} {row['Match']}</div>
+                            <div style="color: white; font-weight: bold; font-size: 1.1em; margin-bottom: 10px;">{row['Bet']}</div>
+                            <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 10px;">
+                                <div><div style="font-size: 0.7em; color: #888;">ODDS</div><div style="font-weight: bold; color: #fff;">{row['Odds']:.2f}</div></div>
+                                <div><div style="font-size: 0.7em; color: #888;">EDGE</div><div style="font-weight: bold; color: {pick['Color']};">{row['Edge']:.1%}</div></div>
+                            </div>
+                            <div style="margin-top: 10px; font-size: 0.9em;">Stake: <span style="color: {pick['Color']}; font-weight: bold;">${rec_stake:.2f}</span></div>
                         </div>
-                        <div style="margin-top: 10px; font-size: 0.9em;">Stake: <span style="color: {pick['Color']}; font-weight: bold;">${rec_stake:.2f}</span></div>
-                    </div>
-                    """, unsafe_allow_html=True)
-        else:
-            st.info("No bets available for Smart Picks.")
+                        """, unsafe_allow_html=True)
+            else:
+                st.info("No smart picks available.")
 
-        # --- THE MAIN FEED ---
+        # --- MAIN FEED ---
         st.markdown("---")
         st.markdown("### 📋 Full Recommendations")
         
@@ -134,7 +117,6 @@ def render_dashboard(bankroll, kelly_multiplier):
             stake_pct = row.get('Stake', 0.01)
             cash_stake = bankroll * stake_pct * (kelly_multiplier / 0.25)
             
-            # Circuit Breaker Logic
             current_exposure += cash_stake
             risk_warning = ""
             if current_exposure > max_risk_dollars:
@@ -183,23 +165,25 @@ def render_dashboard(bankroll, kelly_multiplier):
                             if is_in_slip:
                                 st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
 
-        # --- EXPANDED PARLAY BUILDER (5+ LEGS) ---
+        # --- STRICT PARLAY BUILDER ---
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
         
-        # Relaxed parlay filters to ensure it shows up
-        parlay_candidates = df[(df['Odds'] > 1.1) & (df['Bet Type'] != 'ARBITRAGE')]
+        # 1. Safe Candidates: Odds < 2.20 (Favorites Only)
+        safe_candidates = df[(df['Odds'] > 1.1) & (df['Odds'] < 2.20) & (df['Bet Type'] != 'ARBITRAGE')]
         
-        if len(parlay_candidates) >= 2:
-            value_legs = parlay_candidates.sort_values('Edge', ascending=False).to_dict('records')
-            safe_legs = parlay_candidates.sort_values('Confidence', ascending=False).to_dict('records')
-
+        # 2. Value Candidates: Any Odds (for Moonshots)
+        value_candidates = df[(df['Odds'] > 1.1) & (df['Bet Type'] != 'ARBITRAGE')]
+        
+        if len(value_candidates) >= 2:
             tab1, tab2, tab3, tab4 = st.tabs(["🛡️ Safe (2-Leg)", "🚀 Value (3-Leg)", "🎰 Lotto (4-Leg)", "☄️ Hail Mary (5-Leg)"])
 
-            def render_parlay_card(legs_source, num_legs, title):
-                pool = legs_source[:12]
+            def render_parlay_card(pool, num_legs, title):
+                # Limit pool size for performance
+                pool = pool.sort_values('Edge', ascending=False).head(12).to_dict('records')
+                
                 if len(pool) < num_legs:
-                    st.info(f"Not enough bets found for a {num_legs}-leg parlay.")
+                    st.info(f"Not enough suitable bets found for {title}.")
                     return
 
                 best_combo = None
@@ -231,12 +215,13 @@ def render_dashboard(bankroll, kelly_multiplier):
                     user_stake = st.number_input(f"Wager ($) - {title}", min_value=0.0, value=float(int(kelly_stake_cash)) if kelly_stake_cash > 1 else 5.0, step=5.0)
                     st.success(f"💰 Potential Payout: **${user_stake * tot_odds:.2f}**")
                 else:
-                    st.info("Could not build a valid parlay (conflicting matches).")
+                    st.info("Could not build a valid parlay.")
 
-            with tab1: render_parlay_card(safe_legs, 2, "Bankroll Builder")
-            with tab2: render_parlay_card(value_legs, 3, "Value Stack")
-            with tab3: render_parlay_card(value_legs, 4, "Lotto Ticket")
-            with tab4: render_parlay_card(value_legs, 5, "Hail Mary")
+            # Pass specific pools to specific tabs
+            with tab1: render_parlay_card(safe_candidates, 2, "Bankroll Builder")
+            with tab2: render_parlay_card(value_candidates, 3, "Value Stack")
+            with tab3: render_parlay_card(value_candidates, 4, "Lotto Ticket")
+            with tab4: render_parlay_card(value_candidates, 5, "Hail Mary")
 
         else:
             st.info("Not enough value bets to build a parlay.")
@@ -297,4 +282,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v65.1 (Unlimited Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v66.0 (Strict Parlay Edition)")
