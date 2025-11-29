@@ -1,6 +1,6 @@
 # ==============================================================================
-# backend_runner.py - "The Fixed Monolith" Engine (v38.2)
-# Fixes: NameError on train_league_brain
+# backend_runner.py - "The Date Fix" Engine (v39.0)
+# Features: Guaranteed Date Column, Strict Settlement, Multi-Sport
 # ==============================================================================
 import pandas as pd
 import numpy as np
@@ -32,20 +32,89 @@ warnings.filterwarnings('ignore')
 # 🔐 API CONFIGURATION
 # ==============================================================================
 API_CONFIG = {
-    "THE_ODDS_API_KEY": "0c5a163c2e9a8c4b6a5d33c56747ecf1", 
+    "THE_ODDS_API_KEY": "PASTE_YOUR_KEY_HERE", 
     "DISCORD_WEBHOOK": "PASTE_YOUR_WEBHOOK_HERE" 
 }
 
 # ==============================================================================
-# 1. THE DARWIN MODULE: GENETIC EVOLUTION
+# 1. SETTLEMENT ENGINE
+# ==============================================================================
+def settle_bets():
+    print("--- ⚖️ Running Settlement Engine ---")
+    history_file = 'betting_history.csv'
+    if not os.path.exists(history_file): return
+
+    df = pd.read_csv(history_file)
+    
+    # Ensure columns exist
+    if 'Result' not in df.columns: df['Result'] = 'Pending'
+    if 'Profit' not in df.columns: df['Profit'] = 0.0
+    
+    # Filter for pending bets
+    pending = df[df['Result'] == 'Pending']
+    if pending.empty: return
+
+    now = datetime.utcnow()
+
+    # Soccer Settlement
+    soccer_pending = pending[pending['Sport'] == 'Soccer']
+    if not soccer_pending.empty:
+        try:
+            results = pd.read_csv('https://www.football-data.co.uk/mmz4281/2324/E0.csv', encoding='latin1')
+            results['Date'] = pd.to_datetime(results['Date'], dayfirst=True)
+            for idx, row in soccer_pending.iterrows():
+                try:
+                    # Check Date if available
+                    if pd.notna(row['Date']):
+                        match_date = pd.to_datetime(row['Date']).replace(tzinfo=None)
+                        if match_date > now: continue 
+
+                    teams = row['Match'].split(' vs '); home = teams[0]; away = teams[1]
+                    match = results[(results['HomeTeam'] == home) & (results['AwayTeam'] == away)].tail(1)
+                    
+                    if not match.empty and pd.notna(match.iloc[0]['FTR']):
+                        res = match.iloc[0]['FTR']
+                        won = (row['Bet'] == 'Home Win' and res == 'H') or (row['Bet'] == 'Draw' and res == 'D') or (row['Bet'] == 'Away Win' and res == 'A')
+                        df.at[idx, 'Result'] = 'Win' if won else 'Loss'
+                        df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1) if won else -row['Stake']
+                except: continue
+        except: pass
+    
+    # NFL Settlement
+    nfl_pending = pending[pending['Sport'] == 'NFL']
+    if not nfl_pending.empty:
+        try:
+            games = nfl.import_schedules(years=[2023, 2024])
+            finished = games[games['result'].notna()]
+            for idx, row in nfl_pending.iterrows():
+                try:
+                    if pd.notna(row['Date']):
+                        match_date = pd.to_datetime(row['Date']).replace(tzinfo=None)
+                        if match_date > now: continue
+
+                    teams = row['Match'].split(' @ '); away = teams[0]; home = teams[1]
+                    game = finished[(finished['home_team'] == home) & (finished['away_team'] == away)].tail(1)
+                    if not game.empty:
+                        g = game.iloc[0]
+                        winner = g['home_team'] if g['home_score'] > g['away_score'] else g['away_team']
+                        if 'Moneyline' in row['Bet Type']:
+                            bet_team = row['Bet'].replace(' Win', '').replace('Home', home).replace('Away', away).strip()
+                            won = (bet_team in winner)
+                            df.at[idx, 'Result'] = 'Win' if won else 'Loss'
+                            df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1) if won else -row['Stake']
+                except: continue
+        except: pass
+
+    df.to_csv(history_file, index=False)
+
+# ==============================================================================
+# 2. THE DARWIN MODULE (Unchanged)
 # ==============================================================================
 GENOME_FILE = 'model_genome.json'
-
 def load_or_initialize_genome():
     if os.path.exists(GENOME_FILE):
         with open(GENOME_FILE, 'r') as f: return json.load(f)
     return {'generation': 0, 'best_score': 10.0, 'xgb_n_estimators': 200, 'xgb_max_depth': 3, 'xgb_learning_rate': 0.1, 'rf_n_estimators': 200, 'rf_max_depth': 10, 'nn_hidden_layer_size': 64, 'nn_alpha': 0.0001}
-
 def mutate_genome(genome):
     mutant = genome.copy(); mutation_rate = 0.3
     if random.random() < mutation_rate: mutant['xgb_n_estimators'] = int(genome['xgb_n_estimators'] * random.uniform(0.8, 1.2))
@@ -53,31 +122,25 @@ def mutate_genome(genome):
     if random.random() < mutation_rate: mutant['rf_n_estimators'] = int(genome['rf_n_estimators'] * random.uniform(0.8, 1.2))
     if random.random() < mutation_rate: mutant['nn_hidden_layer_size'] = int(genome['nn_hidden_layer_size'] * random.uniform(0.8, 1.2))
     return mutant
-
 def build_ensemble_from_genome(genome):
     xgb_clf = xgb.XGBClassifier(objective='multi:softprob', eval_metric='mlogloss', use_label_encoder=False, n_estimators=int(genome['xgb_n_estimators']), max_depth=int(genome['xgb_max_depth']), learning_rate=genome['xgb_learning_rate'], random_state=42, n_jobs=-1)
     rf_clf = RandomForestClassifier(n_estimators=int(genome['rf_n_estimators']), max_depth=int(genome['rf_max_depth']), random_state=42, n_jobs=-1)
     nn_clf = MLPClassifier(hidden_layer_sizes=(int(genome['nn_hidden_layer_size']), int(genome['nn_hidden_layer_size'] // 2)), alpha=genome['nn_alpha'], activation='relu', solver='adam', max_iter=500, random_state=42)
     lr_clf = LogisticRegression(multi_class='multinomial', solver='lbfgs', max_iter=1000)
     return VotingClassifier(estimators=[('xgb', xgb_clf), ('rf', rf_clf), ('nn', nn_clf), ('lr', lr_clf)], voting='soft', n_jobs=-1)
-
 def evolve_and_train(X, y):
-    print("   🧬 Initiating Evolutionary Cycle...")
     current_genome = load_or_initialize_genome(); mutant_genome = mutate_genome(current_genome); tscv = TimeSeriesSplit(n_splits=3)
     champ_model = build_ensemble_from_genome(current_genome); champ_scores = cross_val_score(champ_model, X, y, cv=tscv, scoring='neg_log_loss'); champ_fitness = -champ_scores.mean()
     mutant_model = build_ensemble_from_genome(mutant_genome); mutant_scores = cross_val_score(mutant_model, X, y, cv=tscv, scoring='neg_log_loss'); mutant_fitness = -mutant_scores.mean()
     if mutant_fitness < champ_fitness:
-        print("      > 🚀 EVOLUTION! Mutant wins.")
         mutant_genome['best_score'] = mutant_fitness; mutant_genome['generation'] = current_genome['generation'] + 1; winner_genome = mutant_genome
         with open(GENOME_FILE, 'w') as f: json.dump(winner_genome, f)
-    else:
-        print("      > 💀 Champion remains.")
-        winner_genome = current_genome
+    else: winner_genome = current_genome
     final_model = build_ensemble_from_genome(winner_genome); calibrated_model = CalibratedClassifierCV(final_model, method='isotonic', cv=3); calibrated_model.fit(X, y)
     return calibrated_model
 
 # ==============================================================================
-# 2. LIVE ODDS & ARBITRAGE MODULE
+# 3. LIVE ODDS & ARBITRAGE MODULE
 # ==============================================================================
 def get_live_odds(sport_key):
     if "PASTE_YOUR" in API_CONFIG["THE_ODDS_API_KEY"]: return []
@@ -132,7 +195,7 @@ def get_news_alert(team1, team2):
     return None
 
 # ==============================================================================
-# 3. GLOBAL SOCCER MODULE
+# 4. GLOBAL SOCCER MODULE
 # ==============================================================================
 def calculate_soccer_features(df):
     teams = pd.concat([df['HomeTeam'], df['AwayTeam']]).unique(); elo_ratings = {team: 1500 for team in teams}; k_factor = 20; home_elos, away_elos = [], []; team_variance = {team: [] for team in teams}
@@ -145,39 +208,28 @@ def calculate_soccer_features(df):
     volatility_map = {t: np.std(v[-10:]) if len(v) > 10 else 0.25 for t, v in team_variance.items()}
     return df, elo_ratings, volatility_map
 
-# *** FIX: Renamed to train_league_brain and added div_code parameter ***
 def train_league_brain(div_code):
-    print(f"   > Training Brain for League: {div_code}...")
-    seasons = ['2324', '2223', '2122']
-    try: 
-        df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/{div_code}.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
+    seasons = ['2324', '2223', '2122']; 
+    try: df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/{div_code}.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
     except: return None, None
-    
     if df.empty: return None, None
-
     df, elo_ratings, volatility_map = calculate_soccer_features(df)
-    
     h_stats = df[['Date', 'HomeTeam', 'FTR']].rename(columns={'HomeTeam': 'Team'}); h_stats['Points'] = h_stats['FTR'].map({'H': 3, 'D': 1, 'A': 0})
     a_stats = df[['Date', 'AwayTeam', 'FTR']].rename(columns={'AwayTeam': 'Team'}); a_stats['Points'] = a_stats['FTR'].map({'A': 3, 'D': 1, 'H': 0})
     all_stats = pd.concat([h_stats, a_stats]).sort_values('Date'); all_stats['Form_EWMA'] = all_stats.groupby('Team')['Points'].transform(lambda x: x.ewm(span=5, adjust=False).mean().shift(1))
     df = pd.merge(df, all_stats[['Date', 'Team', 'Form_EWMA']], left_on=['Date', 'HomeTeam'], right_on=['Date', 'Team'], how='left').rename(columns={'Form_EWMA': 'HomeForm'})
     df = pd.merge(df, all_stats[['Date', 'Team', 'Form_EWMA']], left_on=['Date', 'AwayTeam'], right_on=['Date', 'Team'], how='left').rename(columns={'Form_EWMA': 'AwayForm'})
-    
     df.dropna(subset=['B365H', 'B365D', 'B365A', 'HomeForm', 'AwayForm'], inplace=True)
     df['elo_diff'] = df['HomeElo'] - df['AwayElo']; df['form_diff'] = df['HomeForm'] - df['AwayForm']
-    
     features = ['elo_diff', 'form_diff']; X, y = df[features], df['FTR']
     le = LabelEncoder(); y_encoded = le.fit_transform(y); scaler = StandardScaler(); X_scaled = scaler.fit_transform(X)
-    
     living_model = evolve_and_train(X_scaled, y_encoded)
-    
     avg_goals_home = df['FTHG'].mean(); avg_goals_away = df['FTAG'].mean()
     home_strength = df.groupby('HomeTeam').agg({'FTHG': 'mean', 'FTAG': 'mean'}).rename(columns={'FTHG': 'h_gf_avg', 'FTAG': 'h_ga_avg'})
     away_strength = df.groupby('AwayTeam').agg({'FTAG': 'mean', 'FTHG': 'mean'}).rename(columns={'FTAG': 'a_gf_avg', 'FTHG': 'a_ga_avg'})
     team_strengths = pd.concat([home_strength, away_strength], axis=1).fillna(1)
     team_strengths['attack'] = (team_strengths['h_gf_avg'] / avg_goals_home + team_strengths['a_gf_avg'] / avg_goals_away) / 2
     team_strengths['defence'] = (team_strengths['h_ga_avg'] / avg_goals_away + team_strengths['a_ga_avg'] / avg_goals_home) / 2
-    
     return {'model': living_model, 'le': le, 'scaler': scaler, 'elo_ratings': elo_ratings, 'volatility': volatility_map, 'team_strengths': team_strengths, 'avgs': (avg_goals_home, avg_goals_away)}, df
 
 def run_global_soccer_module():
@@ -215,11 +267,8 @@ def run_global_soccer_module():
                             if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'Moneyline', 'Bet': outcome, 'Odds': odds_data['price'], 'Edge': edge, 'Confidence': final_probs[outcome], 'Stake': (edge/(odds_data['price']-1))*0.25*vol_factor, 'Info': f"Best: {odds_data['book']}"})
     return pd.DataFrame(bets)
 
-# ==============================================================================
-# 4. NFL MODULE
-# ==============================================================================
 def run_nfl_module():
-    print("--- Running NFL Module (US Pro) ---"); bets = []; odds_data = get_live_odds('americanfootball_nfl')
+    print("--- Running NFL Module ---"); bets = []; odds_data = get_live_odds('americanfootball_nfl')
     team_map = {"Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL", "Baltimore Ravens": "BAL", "Buffalo Bills": "BUF", "Carolina Panthers": "CAR", "Chicago Bears": "CHI", "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE", "Dallas Cowboys": "DAL", "Denver Broncos": "DEN", "Detroit Lions": "DET", "Green Bay Packers": "GB", "Houston Texans": "HOU", "Indianapolis Colts": "IND", "Jacksonville Jaguars": "JAX", "Kansas City Chiefs": "KC", "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC", "Los Angeles Rams": "LA", "Miami Dolphins": "MIA", "Minnesota Vikings": "MIN", "New England Patriots": "NE", "New Orleans Saints": "NO", "New York Giants": "NYG", "New York Jets": "NYJ", "Philadelphia Eagles": "PHI", "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF", "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB", "Tennessee Titans": "TEN", "Washington Commanders": "WAS"}
     try: seasons = [2023, 2022, 2021]; df = nfl.import_pbp_data(years=seasons, downcast=True, cache=False); team_stats = df.groupby(['season', 'home_team']).agg({'yards_gained': 'mean', 'turnover_lost': 'mean'}).reset_index(); ypp_map = team_stats.groupby('home_team')['yards_gained'].mean().to_dict()
     except: ypp_map = {}
@@ -229,8 +278,6 @@ def run_nfl_module():
         h_abbr = team_map.get(game['home_team']); a_abbr = team_map.get(game['away_team'])
         if h_abbr and a_abbr:
             h_ypp = ypp_map.get(h_abbr, 5.0); a_ypp = ypp_map.get(a_abbr, 5.0); pred_margin = (h_ypp - a_ypp) * 7 + 2.5; model_prob_home = 0.50 + (pred_margin / 20)
-            # Cap probability
-            model_prob_home = max(0.10, min(0.90, model_prob_home))
             best_home = {'price': 0, 'book': ''}
             for bookmaker in game['bookmakers']:
                 h2h = next((m for m in bookmaker['markets'] if m['key'] == 'h2h'), None)
@@ -242,28 +289,17 @@ def run_nfl_module():
                 if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'NFL', 'League': 'NFL', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': best_home['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(best_home['price']-1))*0.25, 'Info': f"Best: {best_home['book']}"})
     return pd.DataFrame(bets)
 
-# ==============================================================================
-# 5. NBA MODULE
-# ==============================================================================
 def run_nba_module():
-    print("--- Running NBA Module (US Pro) ---"); bets = []; odds_data = get_live_odds('basketball_nba'); team_power = {}; team_names = []
-    try: stats = leaguedashteamstats.LeagueDashTeamStats(season="2024-25", measure_type_detailed_defense="Four Factors").get_data_frames()[0]; stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15); team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict(); team_names = list(team_power.keys())
+    print("--- Running NBA Module ---"); bets = []; odds_data = get_live_odds('basketball_nba'); team_power = {}; team_names = []
+    try: stats = leaguedashteamstats.LeagueDashTeamStats(season="2023-24", measure_type_detailed_defense="Four Factors").get_data_frames()[0]; stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15); team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict(); team_names = list(team_power.keys())
     except: pass
     for game in odds_data:
         profit, arb_info, bh, _, ba = find_arbitrage(game, 'NBA'); match_time = game.get('commence_time', 'Unknown')
-        # Date Filter
-        try:
-            game_date = datetime.strptime(match_time, "%Y-%m-%dT%H:%M:%SZ")
-            if (game_date - datetime.now()).days > 3: continue
-        except: pass
-        
         if profit > 0: bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
         if not team_names: continue
         model_home = fuzzy_match_team(game['home_team'], team_names); model_away = fuzzy_match_team(game['away_team'], team_names)
         if model_home and model_away:
             h_eff = team_power.get(model_home, 0.5); a_eff = team_power.get(model_away, 0.5); pred_margin = (h_eff - a_eff) * 200 + 3; model_prob_home = 0.50 + (pred_margin / 30)
-            # Cap probability
-            model_prob_home = max(0.15, min(0.85, model_prob_home))
             best_home = {'price': 0, 'book': ''}
             for bookmaker in game['bookmakers']:
                 h2h = next((m for m in bookmaker['markets'] if m['key'] == 'h2h'), None)
@@ -275,11 +311,8 @@ def run_nba_module():
                 if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'Moneyline', 'Bet': 'Home Win', 'Odds': best_home['price'], 'Edge': edge, 'Confidence': model_prob_home, 'Stake': (edge/(best_home['price']-1))*0.25, 'Info': f"Best: {best_home['book']}"})
     return pd.DataFrame(bets)
 
-# ==============================================================================
-# 6. MLB MODULE
-# ==============================================================================
 def run_mlb_module():
-    print("--- Running MLB Module (Moneyball) ---"); bets = []; odds_data = get_live_odds('baseball_mlb')
+    print("--- Running MLB Module ---"); bets = []; odds_data = get_live_odds('baseball_mlb')
     for game in odds_data:
         profit, arb_info, bh, _, ba = find_arbitrage(game, 'MLB'); match_time = game.get('commence_time', 'Unknown')
         if profit > 0: bets.append({'Date': match_time, 'Sport': 'MLB', 'League': 'MLB', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
@@ -293,87 +326,54 @@ def run_mlb_module():
     return pd.DataFrame(bets)
 
 # ==============================================================================
-# 7. SETTLEMENT ENGINE
+# 7. NOTIFICATION & MAIN EXECUTION
 # ==============================================================================
-def settle_bets():
-    print("--- ⚖️ Running Settlement Engine ---")
-    history_file = 'betting_history.csv'
-    if not os.path.exists(history_file): return
-    df = pd.read_csv(history_file)
-    if 'Result' not in df.columns: df['Result'] = 'Pending'
-    if 'Profit' not in df.columns: df['Profit'] = 0.0
-    if 'Date' not in df.columns: df['Date'] = datetime.now().strftime('%Y-%m-%d')
-    
-    pending = df[df['Result'] == 'Pending']
-    if pending.empty: return
+def send_discord_alert(df):
+    WEBHOOK_URL = API_CONFIG["DISCORD_WEBHOOK"]
+    if "PASTE_YOUR" in WEBHOOK_URL: return
+    if df.empty: msg = "🤖 **Betting Co-Pilot:** No value bets found today."
+    else:
+        top_bets = df[df['Edge'] > 0.05].sort_values('Edge', ascending=False).head(5)
+        msg = f"🚀 **Betting Co-Pilot:** {len(df)} Bets Found!\n"
+        for i, row in top_bets.iterrows():
+            sport_icon = "⚽" if row['Sport'] == "Soccer" else "🏈" if row['Sport'] == "NFL" else "🏀"
+            msg += f"{sport_icon} **{row['Match']}**\n   👉 {row['Bet']} @ {row['Odds']:.2f}\n   📈 Edge: {row['Edge']:.2%} | 💰 Stake: {row['Stake']:.2%}\n\n"
+    try: requests.post(WEBHOOK_URL, json={"content": msg})
+    except: pass
 
-    now = datetime.utcnow()
-
-    # Soccer Settlement
-    soccer_pending = pending[pending['Sport'] == 'Soccer']
-    if not soccer_pending.empty:
-        try:
-            results = pd.read_csv('https://www.football-data.co.uk/mmz4281/2324/E0.csv', encoding='latin1')
-            results['Date'] = pd.to_datetime(results['Date'], dayfirst=True)
-            for idx, row in soccer_pending.iterrows():
-                try:
-                    match_date = pd.to_datetime(row['Date']).replace(tzinfo=None)
-                    if match_date > now: continue 
-                    teams = row['Match'].split(' vs '); home = teams[0]; away = teams[1]
-                    match = results[(results['HomeTeam'] == home) & (results['AwayTeam'] == away) & (results['Date'] >= match_date - timedelta(days=1))].tail(1)
-                    if not match.empty and pd.notna(match.iloc[0]['FTR']):
-                        res = match.iloc[0]['FTR']
-                        won = (row['Bet'] == 'Home Win' and res == 'H') or (row['Bet'] == 'Draw' and res == 'D') or (row['Bet'] == 'Away Win' and res == 'A')
-                        df.at[idx, 'Result'] = 'Win' if won else 'Loss'
-                        df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1) if won else -row['Stake']
-                except: continue
-        except: pass
-    
-    # NFL Settlement
-    nfl_pending = pending[pending['Sport'] == 'NFL']
-    if not nfl_pending.empty:
-        try:
-            games = nfl.import_schedules(years=[2023, 2024])
-            finished = games[games['result'].notna()]
-            for idx, row in nfl_pending.iterrows():
-                try:
-                    match_date = pd.to_datetime(row['Date']).replace(tzinfo=None)
-                    if match_date > now: continue
-                    teams = row['Match'].split(' @ '); away = teams[0]; home = teams[1]
-                    game = finished[(finished['home_team'] == home) & (finished['away_team'] == away)].tail(1)
-                    if not game.empty:
-                        g = game.iloc[0]
-                        winner = g['home_team'] if g['home_score'] > g['away_score'] else g['away_team']
-                        if 'Moneyline' in row['Bet Type']:
-                            bet_team = row['Bet'].replace(' Win', '').replace('Home', home).replace('Away', away).strip()
-                            won = (bet_team in winner)
-                            df.at[idx, 'Result'] = 'Win' if won else 'Loss'
-                            df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1) if won else -row['Stake']
-                except: continue
-        except: pass
-
-    df.to_csv(history_file, index=False)
-
-# ==============================================================================
-# MAIN EXECUTION
-# ==============================================================================
 def run_backend_analysis():
     print("--- Starting Daily Global Backend Analysis (US Pro) ---")
     
     # 1. Settle Bets
     settle_bets()
     
-    # 2. Run Modules
-    soccer_bets = run_global_soccer_module()
+    # 2. Train Brains
+    soccer_brain, soccer_hist = train_soccer_brain()
+    
+    # 3. Run Modules
+    soccer_bets = run_soccer_module(soccer_brain, soccer_hist)
     nfl_bets = run_nfl_module()
     nba_bets = run_nba_module()
     mlb_bets = run_mlb_module()
     
     all_bets = pd.concat([soccer_bets, nfl_bets, nba_bets, mlb_bets], ignore_index=True)
     
-    # 3. Save & Archive
+    # 4. Save & Archive
     if not all_bets.empty:
+        # *** FIX: Ensure Date is saved correctly ***
+        # If 'Date' is missing (e.g. from a module that didn't set it), fill with now
+        if 'Date' not in all_bets.columns:
+            all_bets['Date'] = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
+        else:
+            all_bets['Date'] = all_bets['Date'].fillna(datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ'))
+            
         all_bets['Date_Generated'] = datetime.now().strftime('%Y-%m-%d')
+        
+        # Initialize Status Columns
+        all_bets['Result'] = 'Pending'
+        all_bets['Profit'] = 0.0
+        all_bets['Score'] = ''
+        
         all_bets.to_csv('latest_bets.csv', index=False)
         
         history_file = 'betting_history.csv'
@@ -383,19 +383,13 @@ def run_backend_analysis():
             all_bets.to_csv(history_file, index=False)
             
         print(f"\nSuccessfully saved {len(all_bets)} recommendations.")
-        
-        # Discord Alert
-        WEBHOOK_URL = API_CONFIG["DISCORD_WEBHOOK"]
-        if "PASTE_YOUR" not in WEBHOOK_URL:
-            try:
-                msg = f"🚀 **Betting Co-Pilot:** {len(all_bets)} Bets Found!\n"
-                arbs = all_bets[all_bets['Bet Type'] == 'ARBITRAGE']
-                if not arbs.empty: msg += f"🚨 **{len(arbs)} ARBITRAGE OPPORTUNITIES!**\n"
-                requests.post(WEBHOOK_URL, json={"content": msg})
-            except: pass
+        send_discord_alert(all_bets)
     else:
         print("\nNo value bets found.")
-        pd.DataFrame(columns=['Date', 'Date_Generated', 'Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info']).to_csv('latest_bets.csv', index=False)
+        # Save empty file with correct headers
+        cols = ['Date', 'Date_Generated', 'Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info', 'Result', 'Profit', 'Score']
+        pd.DataFrame(columns=cols).to_csv('latest_bets.csv', index=False)
+        send_discord_alert(pd.DataFrame())
 
 if __name__ == "__main__":
     run_backend_analysis()
