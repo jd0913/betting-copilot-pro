@@ -1,6 +1,6 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v48.0 - Date & Profit Fixes
+# v49.0 - Date Fix
 
 import streamlit as st
 import pandas as pd
@@ -22,21 +22,20 @@ def load_data(url):
         df = pd.read_csv(url)
         if df.empty: return "NO_BETS_FOUND"
         
-        # 1. Fix Numeric Columns
+        # Numeric conversion
         for col in ['Edge', 'Confidence', 'Odds', 'Stake', 'Profit']:
-            if col in df.columns: 
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # 2. Fix Profit NaN (The "NaN" Bug)
-        if 'Profit' in df.columns:
-            df['Profit'] = df['Profit'].fillna(0.0)
+            if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce')
             
-        # 3. Fix Date Formatting (The "Missing Date" Bug)
-        # Format: Thu, Jan 1, 2026 at 03:00 PM
+        # Date Formatting
         if 'Date' in df.columns:
-            df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce')
-            df['Formatted_Date'] = df['Date_Obj'].dt.strftime('%a, %b %d, %Y at %I:%M %p')
-            df['Formatted_Date'] = df['Formatted_Date'].fillna('Time TBD')
+            # Force conversion to datetime, handle errors
+            df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce', utc=True)
+            
+            # Format: Thu, Jan 1, 2026 at 03:00 PM
+            # We use a lambda to handle NaT (Not a Time) values gracefully
+            df['Formatted_Date'] = df['Date_Obj'].apply(
+                lambda x: x.strftime('%a, %b %d • %I:%M %p') if pd.notnull(x) else 'Time TBD'
+            )
         else:
             df['Formatted_Date'] = 'Time TBD'
             
@@ -49,7 +48,6 @@ def inject_custom_css(font_choice="Clean (Inter)"):
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
         html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-        
         .gradient-text {
             background: -webkit-linear-gradient(45deg, #00C9FF, #92FE9D);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
@@ -73,13 +71,10 @@ def inject_custom_css(font_choice="Clean (Inter)"):
         .badge-high { background-color: #ff4b4b; color: white; }
         .badge-safe { background-color: #00e676; color: #000; }
         .badge-std { background-color: #31333F; color: #ccc; border: 1px solid #555; }
-        
-        /* Result Badges */
         .res-win { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
         .res-loss { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
         .res-push { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
         .res-pending { color: #ffc107; font-weight: bold; font-style: italic; }
-        
         div[data-testid="stMetricValue"] { font-size: 1.5rem; color: #00C9FF; }
     </style>
     """, unsafe_allow_html=True)
