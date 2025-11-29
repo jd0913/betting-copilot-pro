@@ -1,6 +1,6 @@
 # views.py
-# The "Self-Aware" Layouts (v63.0)
-# Features: Full History Metrics, Smart Dashboard, Bet Tracker
+# The "Self-Aware" Layouts (v63.1)
+# Fixes: Prevent negative inputs in Parlay Calculator
 
 import streamlit as st
 import pandas as pd
@@ -144,6 +144,15 @@ def render_dashboard(bankroll, kelly_multiplier):
                     st.metric("Total Odds", f"{tot_odds:.2f}")
                     st.metric("Win Prob", f"{tot_prob:.1%}")
                     st.metric("Rec. Stake", f"${kelly_stake_cash:.2f}")
+                
+                # *** FIX: Added min_value=0.0 to prevent negative inputs ***
+                user_stake = st.number_input(
+                    f"Wager ($) - {title}", 
+                    min_value=0.0, 
+                    value=float(int(kelly_stake_cash)) if kelly_stake_cash > 1 else 5.0, 
+                    step=5.0
+                )
+                st.success(f"💰 Potential Payout: **${user_stake * tot_odds:.2f}**")
 
             with tab1: render_parlay_card(safe_combo, "Bankroll Builder")
             with tab2: render_parlay_card(value_combo, "Value Stack")
@@ -191,8 +200,13 @@ def render_bet_tracker(bankroll):
 def render_history():
     st.markdown('<p class="gradient-text">📜 History</p>', unsafe_allow_html=True)
     
-    # CSS for center alignment
-    st.markdown("""<style>th { text-align: center !important; } td { text-align: center !important; }</style>""", unsafe_allow_html=True)
+    # --- CSS FOR CENTER ALIGNMENT ---
+    st.markdown("""
+    <style>
+        th { text-align: center !important; }
+        td { text-align: center !important; }
+    </style>
+    """, unsafe_allow_html=True)
     
     df = utils.load_data(utils.HISTORY_URL)
     
@@ -225,7 +239,7 @@ def render_history():
         display_df['Result'] = display_df['Result'].fillna('Pending')
         display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
         
-        # Fix Profit Display
+        # Fix Profit Display (Show '-' for pending)
         display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
 
         # Rename and Select Columns
@@ -235,6 +249,7 @@ def render_history():
             display_df = display_df.rename(columns={'Date': 'Match Time'})
             
         cols = ['Match Time', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
+        # Filter to ensure columns exist
         cols = [c for c in cols if c in display_df.columns]
         
         st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
@@ -242,4 +257,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v63.0 (Self-Aware Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v63.1 (Self-Aware Edition)")
