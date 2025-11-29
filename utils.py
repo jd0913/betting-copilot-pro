@@ -1,13 +1,12 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v49.0 - Date Fix
+# v62.0 - Added Performance Calculation Logic
 
 import streamlit as st
 import pandas as pd
 import requests
 
 # --- CONFIGURATION ---
-# REPLACE WITH YOUR USERNAME
 GITHUB_USERNAME = "jd0913"
 GITHUB_REPO = "betting-copilot-pro"
 
@@ -28,22 +27,45 @@ def load_data(url):
             
         # Date Formatting
         if 'Date' in df.columns:
-            # Force conversion to datetime, handle errors
-            df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce', utc=True)
-            
-            # Format: Thu, Jan 1, 2026 at 03:00 PM
-            # We use a lambda to handle NaT (Not a Time) values gracefully
-            df['Formatted_Date'] = df['Date_Obj'].apply(
-                lambda x: x.strftime('%a, %b %d • %I:%M %p') if pd.notnull(x) else 'Time TBD'
-            )
+            df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce')
+            df['Formatted_Date'] = df['Date_Obj'].dt.strftime('%a, %b %d • %I:%M %p')
+            df['Formatted_Date'] = df['Formatted_Date'].fillna('Time TBD')
         else:
             df['Formatted_Date'] = 'Time TBD'
             
         return df
     except: return "FILE_NOT_FOUND"
 
+def get_performance_stats(history_df):
+    """Calculates live performance metrics from history."""
+    if not isinstance(history_df, pd.DataFrame) or 'Result' not in history_df.columns:
+        return {"win_rate": 0.0, "roi": 0.0, "total_bets": 0, "sport_stats": {}}
+    
+    settled = history_df[history_df['Result'].isin(['Win', 'Loss'])]
+    if settled.empty:
+        return {"win_rate": 0.0, "roi": 0.0, "total_bets": 0, "sport_stats": {}}
+    
+    wins = len(settled[settled['Result'] == 'Win'])
+    total = len(settled)
+    profit = settled['Profit'].sum()
+    total_staked = settled['Stake'].sum() if 'Stake' in settled.columns else total # Approx
+    
+    win_rate = wins / total
+    roi = profit / total_staked if total_staked > 0 else 0.0
+    
+    # Per Sport Stats
+    sport_stats = {}
+    if 'Sport' in settled.columns:
+        for sport in settled['Sport'].unique():
+            s_df = settled[settled['Sport'] == sport]
+            s_wins = len(s_df[s_df['Result'] == 'Win'])
+            s_total = len(s_df)
+            if s_total > 0:
+                sport_stats[sport] = s_wins / s_total
+    
+    return {"win_rate": win_rate, "roi": roi, "total_bets": total, "sport_stats": sport_stats}
+
 def inject_custom_css(font_choice="Clean (Inter)"):
-    """Injects the 'Vegas Dark' design system."""
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
