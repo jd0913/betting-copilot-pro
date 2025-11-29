@@ -151,18 +151,46 @@ def render_bet_tracker(bankroll):
     else: st.info("Your bet slip is empty.")
 
 def render_history():
-    st.markdown('<p class="gradient-text">📜 History</p>', unsafe_allow_html=True)
+    st.markdown('<p class="gradient-text">📜 Performance Archive</p>', unsafe_allow_html=True)
     df = utils.load_data(utils.HISTORY_URL)
+    
     if isinstance(df, pd.DataFrame):
-        if 'Result' not in df.columns: st.info("No results settled yet."); st.dataframe(df); return
+        if 'Result' not in df.columns:
+            st.info("No results settled yet.")
+            st.dataframe(df)
+            return
+
+        # Metrics
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
         if not settled.empty:
-            total_profit = settled['Profit'].sum(); win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
-            c1, c2 = st.columns(2); c1.metric("Total Profit", f"{total_profit:.2f}u"); c2.metric("Win Rate", f"{win_rate:.1%}"); st.divider()
-        display_df = df.copy(); display_df['Result'] = display_df['Result'].fillna('Pending'); display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
-        cols = ['Formatted_Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']; display_df = display_df.rename(columns={'Formatted_Date': 'Date'}); cols = [c for c in cols if c in display_df.columns]
+            total_profit = settled['Profit'].sum()
+            win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Profit", f"{total_profit:.2f}u")
+            c2.metric("Win Rate", f"{win_rate:.1%}")
+            c3.metric("Total Bets", len(settled))
+            st.divider()
+
+        # HTML Table with Badges
+        display_df = df.copy()
+        display_df['Result'] = display_df['Result'].fillna('Pending')
+        display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
+        
+        # *** FIX: Handle NaN Profit for display ***
+        if 'Profit' in display_df.columns:
+            display_df['Profit'] = display_df['Profit'].fillna(0.0)
+        
+        cols = ['Formatted_Date', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
+        display_df = display_df.rename(columns={'Formatted_Date': 'Date'})
+        
+        # Only show columns that actually exist
+        cols = [c for c in cols if c in display_df.columns]
+        
         st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
+        
         st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
+        
     else: st.info("No history found.")
 
 def render_about():
