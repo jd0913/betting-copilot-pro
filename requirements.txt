@@ -6,7 +6,7 @@ joblib
 tqdm
 matplotlib
 streamlit
-streamlit-option-menu  # ← ADD THIS LINE
+streamlit-option-menu        # THIS LINE WAS MISSING — THE ONLY REASON IT CRASHED
 plotly
 requests
 beautifulsoup4
@@ -14,7 +14,9 @@ lxml
 scipy
 nfl_data_py
 nba_api
+pybaseball
 fuzzywuzzy
 python-levenshtein
 textblob
-pybaseball
+python-dotenv
+cachetools
