@@ -31,7 +31,3 @@ NFL_TEAMS = {
     "New York Jets": "NYJ", "Philadelphia Eagles": "PHI", "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF",
     "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB", "Tennessee Titans": "TEN", "Washington Commanders": "WAS"
 }
-
-# GitHub Config for Frontend
-GITHUB_USERNAME = "jd0913"
-GITHUB_REPO = "betting-copilot-pro"
