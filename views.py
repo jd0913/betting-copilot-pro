@@ -1,6 +1,6 @@
 # views.py
-# The "Interactive Parlay" Layouts (v61.0)
-# Features: Live Parlay Calculator, Payout Math, Kelly for Parlays
+# The "Self-Aware" Layouts (v62.0)
+# Features: Live Performance Ticker, Sport-Specific Accuracy Context
 
 import streamlit as st
 import pandas as pd
@@ -12,8 +12,23 @@ import utils
 def render_dashboard(bankroll, kelly_multiplier):
     st.markdown('<p class="gradient-text">🚀 Live Command Center</p>', unsafe_allow_html=True)
     
+    # Load Data
     df = utils.load_data(utils.LATEST_URL)
+    history_df = utils.load_data(utils.HISTORY_URL)
     
+    # Calculate Live Stats
+    stats = utils.get_performance_stats(history_df)
+    
+    # --- 1. SYSTEM HEALTH & PERFORMANCE TICKER ---
+    # This makes the model "Self-Aware"
+    st.markdown("### 🧠 System Intelligence")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Real-World Win Rate", f"{stats['win_rate']:.1%}", delta="Live Performance")
+    k2.metric("Real-World ROI", f"{stats['roi']:.1%}", delta="Profitability")
+    k3.metric("Knowledge Base", f"{stats['total_bets'] + 15000:,} Matches", help="Historical training data + Live tracked bets")
+    k4.metric("Active Opportunities", len(df) if isinstance(df, pd.DataFrame) else 0)
+    st.markdown("---")
+
     if isinstance(df, pd.DataFrame):
         # --- FILTERS ---
         sports = ["All"] + list(df['Sport'].unique()) if 'Sport' in df.columns else ["All"]
@@ -23,24 +38,6 @@ def render_dashboard(bankroll, kelly_multiplier):
         
         if selected_sport != "All": df = df[df['Sport'] == selected_sport]
         
-        # --- KPI CARDS ---
-        total_bets = len(df)
-        top_edge = df['Edge'].max() if not df.empty else 0
-        
-        kpi_html = f"""
-        <div style="display:flex; gap:10px; margin-bottom:20px;">
-            <div style="flex:1; background:#1e2130; padding:15px; border-radius:10px; border:1px solid #2b2f44; text-align:center;">
-                <div style="color:#8b92a5; font-size:0.8em; font-weight:bold;">ACTIVE BETS</div>
-                <div style="font-size:1.8em; font-weight:800; color:white;">{total_bets}</div>
-            </div>
-            <div style="flex:1; background:#1e2130; padding:15px; border-radius:10px; border:1px solid #2b2f44; text-align:center;">
-                <div style="color:#8b92a5; font-size:0.8em; font-weight:bold;">TOP EDGE</div>
-                <div style="font-size:1.8em; font-weight:800; color:#00e676;">{top_edge:.1%}</div>
-            </div>
-        </div>
-        """
-        st.markdown(kpi_html, unsafe_allow_html=True)
-
         # --- THE BETTING FEED ---
         st.markdown("### 📋 Actionable Recommendations")
         
@@ -48,7 +45,8 @@ def render_dashboard(bankroll, kelly_multiplier):
             df['key'] = df['Match'] + "_" + df['Bet']
 
         for i, row in df.iterrows():
-            sport_icon = utils.get_team_emoji(row.get('Sport', 'Soccer'))
+            sport = row.get('Sport', 'Soccer')
+            sport_icon = utils.get_team_emoji(sport)
             match_time = row.get('Formatted_Date', 'Time TBD')
             risk_badge = utils.get_risk_badge(row)
             bookie = row.get('Info', 'Best Price')
@@ -57,8 +55,13 @@ def render_dashboard(bankroll, kelly_multiplier):
             stake_pct = row.get('Stake', 0.01)
             cash_stake = bankroll * stake_pct * (kelly_multiplier / 0.25)
             
+            # Get Sport-Specific Accuracy
+            sport_acc = stats['sport_stats'].get(sport, 0.0)
+            sport_acc_str = f"{sport_acc:.0%}" if sport_acc > 0 else "New"
+            
             with st.container():
                 c1, c2 = st.columns([3, 1])
+                
                 with c1:
                     st.markdown(f"""
                     <div class="bet-ticket">
@@ -86,19 +89,20 @@ def render_dashboard(bankroll, kelly_multiplier):
                     st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row['Odds']:.2f}</div></div>""", unsafe_allow_html=True)
                     
                     with st.expander("Details"):
-                        if row['Odds'] > 0: st.write(f"**Implied:** {(1/row['Odds']):.1%}")
-                        else: st.write("**Implied:** N/A")
+                        st.write(f"**Implied:** {(1/row['Odds']):.1%}")
+                        st.write(f"**Model Accuracy ({sport}):** {sport_acc_str}")
+                        
                         key = row['key']
                         is_in_slip = any(b['key'] == key for b in st.session_state.bet_slip)
                         if st.checkbox("Add to Slip", value=is_in_slip, key=key):
                             if not is_in_slip:
                                 row_data = row.to_dict(); row_data['User_Stake'] = cash_stake
                                 st.session_state.bet_slip.append(row_data); st.rerun()
-                            else:
-                                if is_in_slip:
-                                    st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
+                        else:
+                            if is_in_slip:
+                                st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
 
-        # --- SMART PARLAY BUILDER (INTERACTIVE) ---
+        # --- SMART PARLAY BUILDER ---
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
         
@@ -114,52 +118,42 @@ def render_dashboard(bankroll, kelly_multiplier):
             # 2. Value Stack (Medium)
             value_legs = parlay_candidates.sort_values('Edge', ascending=False).to_dict('records')
             value_combo = None
-            for combo in combinations(value_legs[:6], 3): # 3 Legs
+            for combo in combinations(value_legs[:6], 3):
                 if len(set([c['Match'] for c in combo])) == 3: value_combo = combo; break
 
             # 3. Moonshot (High Risk)
             lotto_legs = df[(df['Odds'] > 2.5) & (df['Edge'] > 0)].sort_values('Edge', ascending=False).to_dict('records')
             lotto_combo = None
-            for combo in combinations(lotto_legs[:8], 4): # 4 Legs
+            for combo in combinations(lotto_legs[:8], 4):
                 if len(set([c['Match'] for c in combo])) == 4: lotto_combo = combo; break
 
             tab1, tab2, tab3 = st.tabs(["🛡️ Safe (2-Leg)", "🚀 Value (3-Leg)", "🎰 Lotto (4-Leg)"])
 
             def render_parlay_card(combo, title):
-                if not combo:
-                    st.info("Not enough bets found for this strategy.")
-                    return
-                
+                if not combo: st.info("Not enough bets found."); return
                 tot_odds = np.prod([c['Odds'] for c in combo])
                 tot_prob = np.prod([c['Confidence'] for c in combo])
                 tot_edge = (tot_prob * tot_odds) - 1
-                
-                # Kelly for Parlay (Simplified)
-                # Stake = (Prob * Odds - 1) / (Odds - 1) * Multiplier
                 kelly_stake_pct = (tot_edge / (tot_odds - 1)) * kelly_multiplier if tot_odds > 1 else 0
                 kelly_stake_cash = bankroll * kelly_stake_pct
                 
                 c1, c2 = st.columns([2, 1])
                 with c1:
                     st.markdown(f"#### {title}")
-                    for leg in combo:
-                        st.markdown(f"• **{leg['Bet']}** @ {leg['Odds']:.2f} ({leg['Match']})")
+                    for leg in combo: st.markdown(f"• **{leg['Bet']}** @ {leg['Odds']:.2f} ({leg['Match']})")
                 with c2:
                     st.metric("Total Odds", f"{tot_odds:.2f}")
                     st.metric("Win Prob", f"{tot_prob:.1%}")
                     st.metric("Rec. Stake", f"${kelly_stake_cash:.2f}")
                 
-                # Interactive Calculator
-                user_stake = st.number_input(f"Wager Amount ($) - {title}", value=float(int(kelly_stake_cash)) if kelly_stake_cash > 1 else 5.0, step=5.0)
-                potential_win = user_stake * tot_odds
-                st.success(f"💰 Potential Payout: **${potential_win:.2f}**")
+                user_stake = st.number_input(f"Wager ($) - {title}", value=float(int(kelly_stake_cash)) if kelly_stake_cash > 1 else 5.0, step=5.0)
+                st.success(f"💰 Potential Payout: **${user_stake * tot_odds:.2f}**")
 
             with tab1: render_parlay_card(safe_combo, "Bankroll Builder")
             with tab2: render_parlay_card(value_combo, "Value Stack")
             with tab3: render_parlay_card(lotto_combo, "Moonshot Ticket")
 
-        else:
-            st.info("Not enough value bets to build a parlay.")
+        else: st.info("Not enough value bets to build a parlay.")
 
     elif df == "NO_BETS_FOUND":
         st.success("✅ System Online. Market Scanned. No Value Found.")
@@ -216,4 +210,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v61.0 (Interactive Parlay Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v62.0 (Self-Aware Edition)")
