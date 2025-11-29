@@ -2,7 +2,7 @@
 # Configuration settings and API keys
 
 API_CONFIG = {
-    "THE_ODDS_API_KEY": "YOUR_KEY_HERE", 
+    "THE_ODDS_API_KEY": "0c5a163c2e9a8c4b6a5d33c56747ecf1", 
     "DISCORD_WEBHOOK": "https://discord.com/api/webhooks/..."
 }
 
