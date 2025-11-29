@@ -44,19 +44,13 @@ def mutate_genome(genome):
     return mutant
 
 def build_ensemble_from_genome(genome):
-    # 1. XGBoost
     xgb_clf = xgb.XGBClassifier(objective='multi:softprob', eval_metric='mlogloss', use_label_encoder=False, n_estimators=int(genome['xgb_n_estimators']), max_depth=int(genome['xgb_max_depth']), learning_rate=genome['xgb_learning_rate'], random_state=42, n_jobs=-1)
-    # 2. Random Forest
     rf_clf = RandomForestClassifier(n_estimators=int(genome['rf_n_estimators']), max_depth=int(genome['rf_max_depth']), random_state=42, n_jobs=-1)
-    # 3. Neural Network (The Deep Learning Component)
     nn_clf = MLPClassifier(hidden_layer_sizes=(int(genome['nn_hidden_layer_size']), int(genome['nn_hidden_layer_size'] // 2)), alpha=genome['nn_alpha'], activation='relu', solver='adam', max_iter=500, random_state=42)
-    # 4. Logistic Regression
     lr_clf = LogisticRegression(multi_class='multinomial', solver='lbfgs', max_iter=1000)
-    
     return VotingClassifier(estimators=[('xgb', xgb_clf), ('rf', rf_clf), ('nn', nn_clf), ('lr', lr_clf)], voting='soft', n_jobs=-1)
 
 def train_meta_model(X, y, primary_model):
-    """Meta-Labeling: Trains a model to predict if the primary model is WRONG."""
     try:
         preds = cross_val_predict(primary_model, X, y, cv=3)
         meta_y = (preds == y).astype(int)
@@ -80,10 +74,7 @@ def evolve_and_train(X, y):
         winner_genome = current_genome
         
     final_model = build_ensemble_from_genome(winner_genome)
-    
-    # Train Meta-Model
     meta_model = train_meta_model(X, y, final_model)
-    
     calibrated_model = CalibratedClassifierCV(final_model, method='isotonic', cv=3)
     calibrated_model.fit(X, y)
     return calibrated_model, meta_model
@@ -132,7 +123,6 @@ def fuzzy_match_team(team_name, team_list):
     return None
 
 def get_news_alert(team1, team2):
-    """Scrapes Google News for injury/sentiment."""
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         query = f'"{team1}" OR "{team2}" injury OR doubt OR out'
@@ -173,9 +163,7 @@ def train_soccer_brain():
     df['elo_diff'] = df['HomeElo'] - df['AwayElo']; df['form_diff'] = df['HomeForm'] - df['AwayForm']
     features = ['elo_diff', 'form_diff']; X, y = df[features], df['FTR']
     le = LabelEncoder(); y_encoded = le.fit_transform(y); scaler = StandardScaler(); X_scaled = scaler.fit_transform(X)
-    
     living_model, meta_model = evolve_and_train(X_scaled, y_encoded)
-    
     avg_goals_home = df['FTHG'].mean(); avg_goals_away = df['FTAG'].mean()
     home_strength = df.groupby('HomeTeam').agg({'FTHG': 'mean', 'FTAG': 'mean'}).rename(columns={'FTHG': 'h_gf_avg', 'FTAG': 'h_ga_avg'})
     away_strength = df.groupby('AwayTeam').agg({'FTAG': 'mean', 'FTHG': 'mean'}).rename(columns={'FTAG': 'a_gf_avg', 'FTHG': 'a_ga_avg'})
@@ -246,12 +234,24 @@ def run_nfl_module():
 
 def run_nba_module():
     print("--- Running NBA Module ---"); bets = []; odds_data = get_live_odds('basketball_nba'); team_power = {}; team_names = []
-    try: stats = leaguedashteamstats.LeagueDashTeamStats(season="2023-24", measure_type_detailed_defense="Four Factors").get_data_frames()[0]; stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15); team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict(); team_names = list(team_power.keys())
-    except: pass
+    
+    # *** FIX: Robust NBA Stats Fetching ***
+    try: 
+        # Try current season first
+        stats = leaguedashteamstats.LeagueDashTeamStats(season="2024-25", measure_type_detailed_defense="Four Factors").get_data_frames()[0]
+        stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15)
+        team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict()
+        team_names = list(team_power.keys())
+    except: 
+        print("   > NBA Stats API failed or off-season. Skipping predictive model, running Arbitrage only.")
+        pass
+        
     for game in odds_data:
         profit, arb_info, bh, _, ba = find_arbitrage(game, 'NBA'); match_time = game.get('commence_time', 'Unknown')
         if profit > 0: bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
-        if not team_names: continue
+        
+        if not team_names: continue # Skip prediction if no stats
+
         model_home = fuzzy_match_team(game['home_team'], team_names); model_away = fuzzy_match_team(game['away_team'], team_names)
         if model_home and model_away:
             h_eff = team_power.get(model_home, 0.5); a_eff = team_power.get(model_away, 0.5); pred_margin = (h_eff - a_eff) * 200 + 3; model_prob_home = 0.50 + (pred_margin / 30)
