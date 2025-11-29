@@ -1,6 +1,6 @@
 # views.py
-# The "Self-Aware" Layouts (v62.0)
-# Features: Live Performance Ticker, Sport-Specific Accuracy Context
+# The "Self-Aware" Layouts (v62.1)
+# Fixes: ZeroDivisionError on Arbitrage Bets
 
 import streamlit as st
 import pandas as pd
@@ -20,7 +20,6 @@ def render_dashboard(bankroll, kelly_multiplier):
     stats = utils.get_performance_stats(history_df)
     
     # --- 1. SYSTEM HEALTH & PERFORMANCE TICKER ---
-    # This makes the model "Self-Aware"
     st.markdown("### 🧠 System Intelligence")
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Real-World Win Rate", f"{stats['win_rate']:.1%}", delta="Live Performance")
@@ -89,7 +88,12 @@ def render_dashboard(bankroll, kelly_multiplier):
                     st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row['Odds']:.2f}</div></div>""", unsafe_allow_html=True)
                     
                     with st.expander("Details"):
-                        st.write(f"**Implied:** {(1/row['Odds']):.1%}")
+                        # *** FIX: Handle ZeroDivisionError for Arbitrage ***
+                        if row['Odds'] > 0:
+                            st.write(f"**Implied:** {(1/row['Odds']):.1%}")
+                        else:
+                            st.write("**Implied:** N/A (Arbitrage)")
+                            
                         st.write(f"**Model Accuracy ({sport}):** {sport_acc_str}")
                         
                         key = row['key']
@@ -106,6 +110,7 @@ def render_dashboard(bankroll, kelly_multiplier):
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
         
+        # Filter out Arbitrage bets (Odds 0)
         parlay_candidates = df[(df['Odds'] > 1.1) & (df['Odds'] < 3.0) & (df['Bet Type'] != 'ARBITRAGE')]
         
         if len(parlay_candidates) >= 2:
@@ -205,9 +210,4 @@ def render_history():
         elif 'Date' in display_df.columns: display_df = display_df.rename(columns={'Date': 'Match Time'})
         cols = ['Match Time', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
         cols = [c for c in cols if c in display_df.columns]
-        st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
-        st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
-    else: st.info("No history found.")
-
-def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v62.0 (Self-Aware Edition)")
+        st.write(display_df[cols]
