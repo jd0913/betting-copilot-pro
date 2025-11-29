@@ -9,7 +9,7 @@ nba_api==1.5.1
 pybaseball==2.2.7
 requests==2.32.3
 beautifulsoup4==4.12.3
-lxml==5.3.Default
+lxml==5.3.0
 fuzzywuzzy==0.18.0
 python-levenshtein==0.25.1
 textblob==0.18.0.post0
