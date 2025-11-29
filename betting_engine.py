@@ -1,5 +1,6 @@
 # betting_engine.py
 # The Core Logic: AI Models, Data Fetching, Settlement, and Feature Engineering
+# v47.0 - Strict Settlement & Date Fixes
 
 import pandas as pd
 import numpy as np
@@ -17,7 +18,7 @@ from nba_api.stats.endpoints import leaguedashteamstats
 import requests
 from bs4 import BeautifulSoup
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import json
 import random
@@ -122,20 +123,6 @@ def fuzzy_match_team(team_name, team_list):
     if score >= 80: return match
     return None
 
-def get_news_alert(team1, team2):
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        query = f'"{team1}" OR "{team2}" injury OR doubt OR out'
-        url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbm=nws"
-        res = requests.get(url, headers=headers)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        headlines = soup.find_all('div', {'role': 'heading'})
-        for h in headlines[:3]:
-            if any(keyword in h.text.lower() for keyword in ['injury', 'doubt', 'out', 'miss', 'sidelined']):
-                return f"⚠️ News: {h.text}"
-    except: return None
-    return None
-
 # ==============================================================================
 # 3. SPORT MODULES
 # ==============================================================================
@@ -189,7 +176,6 @@ def run_soccer_module(brain, historical_df):
                 feat_scaled = brain['scaler'].transform(pd.DataFrame([{'elo_diff': h_elo - a_elo, 'form_diff': h_form - a_form}]))
                 probs_alpha = brain['model'].predict_proba(feat_scaled)[0]
                 
-                # Meta-Labeling Check
                 if brain['meta_model']:
                     trust_score = brain['meta_model'].predict_proba(feat_scaled)[0][1]
                     if trust_score < 0.55: probs_alpha = (probs_alpha + np.array([0.33, 0.33, 0.33])) / 2
@@ -234,24 +220,12 @@ def run_nfl_module():
 
 def run_nba_module():
     print("--- Running NBA Module ---"); bets = []; odds_data = get_live_odds('basketball_nba'); team_power = {}; team_names = []
-    
-    # *** FIX: Robust NBA Stats Fetching ***
-    try: 
-        # Try current season first
-        stats = leaguedashteamstats.LeagueDashTeamStats(season="2024-25", measure_type_detailed_defense="Four Factors").get_data_frames()[0]
-        stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15)
-        team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict()
-        team_names = list(team_power.keys())
-    except: 
-        print("   > NBA Stats API failed or off-season. Skipping predictive model, running Arbitrage only.")
-        pass
-        
+    try: stats = leaguedashteamstats.LeagueDashTeamStats(season="2023-24", measure_type_detailed_defense="Four Factors").get_data_frames()[0]; stats['EFF'] = (stats['EFG_PCT']*0.4) - (stats['TM_TOV_PCT']*0.25) + (stats['OREB_PCT']*0.2) + (stats['FTA_RATE']*0.15); team_power = stats.set_index('TEAM_NAME')['EFF'].to_dict(); team_names = list(team_power.keys())
+    except: pass
     for game in odds_data:
         profit, arb_info, bh, _, ba = find_arbitrage(game, 'NBA'); match_time = game.get('commence_time', 'Unknown')
         if profit > 0: bets.append({'Date': match_time, 'Sport': 'NBA', 'League': 'NBA', 'Match': f"{game['away_team']} @ {game['home_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
-        
-        if not team_names: continue # Skip prediction if no stats
-
+        if not team_names: continue
         model_home = fuzzy_match_team(game['home_team'], team_names); model_away = fuzzy_match_team(game['away_team'], team_names)
         if model_home and model_away:
             h_eff = team_power.get(model_home, 0.5); a_eff = team_power.get(model_away, 0.5); pred_margin = (h_eff - a_eff) * 200 + 3; model_prob_home = 0.50 + (pred_margin / 30)
@@ -281,21 +255,38 @@ def run_mlb_module():
     return pd.DataFrame(bets)
 
 def settle_bets():
+    """
+    Strict Settlement Engine.
+    Only grades bets where the match date is in the past.
+    """
     print("--- ⚖️ Running Settlement Engine ---")
     history_file = 'betting_history.csv'
     if not os.path.exists(history_file): return
     df = pd.read_csv(history_file)
     if 'Result' not in df.columns: df['Result'] = 'Pending'
     if 'Profit' not in df.columns: df['Profit'] = 0.0
+    if 'Date' not in df.columns: df['Date'] = datetime.now().strftime('%Y-%m-%d')
     
-    pending = df[(df['Result'] == 'Pending') & (df['Sport'] == 'Soccer')]
-    if not pending.empty:
+    pending = df[df['Result'] == 'Pending']
+    if pending.empty: return
+
+    now = datetime.utcnow()
+
+    # Soccer Settlement
+    soccer_pending = pending[pending['Sport'] == 'Soccer']
+    if not soccer_pending.empty:
         try:
             results = pd.read_csv('https://www.football-data.co.uk/mmz4281/2324/E0.csv', encoding='latin1')
-            for idx, row in pending.iterrows():
+            results['Date'] = pd.to_datetime(results['Date'], dayfirst=True)
+            for idx, row in soccer_pending.iterrows():
                 try:
+                    # Check Date
+                    match_date = pd.to_datetime(row['Date']).replace(tzinfo=None)
+                    if match_date > now: continue # Skip future games
+
                     teams = row['Match'].split(' vs '); home = teams[0]; away = teams[1]
-                    match = results[(results['HomeTeam'] == home) & (results['AwayTeam'] == away)].tail(1)
+                    match = results[(results['HomeTeam'] == home) & (results['AwayTeam'] == away) & (results['Date'] >= match_date - timedelta(days=1))].tail(1)
+                    
                     if not match.empty and pd.notna(match.iloc[0]['FTR']):
                         res = match.iloc[0]['FTR']
                         won = (row['Bet'] == 'Home Win' and res == 'H') or (row['Bet'] == 'Draw' and res == 'D') or (row['Bet'] == 'Away Win' and res == 'A')
@@ -303,4 +294,29 @@ def settle_bets():
                         df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1) if won else -row['Stake']
                 except: continue
         except: pass
+    
+    # NFL Settlement
+    nfl_pending = pending[pending['Sport'] == 'NFL']
+    if not nfl_pending.empty:
+        try:
+            games = nfl.import_schedules(years=[2023, 2024])
+            finished = games[games['result'].notna()]
+            for idx, row in nfl_pending.iterrows():
+                try:
+                    match_date = pd.to_datetime(row['Date']).replace(tzinfo=None)
+                    if match_date > now: continue
+
+                    teams = row['Match'].split(' @ '); away = teams[0]; home = teams[1]
+                    game = finished[(finished['home_team'] == home) & (finished['away_team'] == away)].tail(1)
+                    if not game.empty:
+                        g = game.iloc[0]
+                        winner = g['home_team'] if g['home_score'] > g['away_score'] else g['away_team']
+                        if 'Moneyline' in row['Bet Type']:
+                            bet_team = row['Bet'].replace(' Win', '').replace('Home', home).replace('Away', away).strip()
+                            won = (bet_team in winner)
+                            df.at[idx, 'Result'] = 'Win' if won else 'Loss'
+                            df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1) if won else -row['Stake']
+                except: continue
+        except: pass
+
     df.to_csv(history_file, index=False)
