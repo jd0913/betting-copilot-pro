@@ -1,6 +1,6 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v46.0 - Fixed Font to Inter
+# v47.0 - Enterprise Toolkit
 
 import streamlit as st
 import pandas as pd
@@ -37,45 +37,60 @@ def load_data(url):
         return df
     except: return "FILE_NOT_FOUND"
 
-def inject_custom_css():
-    """
-    Injects the 'Vegas Dark' design system.
-    PERMANENTLY SET TO INTER FONT.
-    """
-    st.markdown("""
+def inject_custom_css(font_choice):
+    """Injects the 'Vegas Dark' design system."""
+    
+    fonts = {
+        "Modern (Roboto)": "https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap",
+        "Tech (JetBrains Mono)": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap",
+        "Clean (Inter)": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap",
+        "Futuristic (Orbitron)": "https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap"
+    }
+    
+    font_family = {
+        "Modern (Roboto)": "'Roboto', sans-serif",
+        "Tech (JetBrains Mono)": "'JetBrains Mono', monospace",
+        "Clean (Inter)": "'Inter', sans-serif",
+        "Futuristic (Orbitron)": "'Orbitron', sans-serif"
+    }
+
+    font_url = fonts.get(font_choice, fonts["Modern (Roboto)"])
+    family = font_family.get(font_choice, font_family["Modern (Roboto)"])
+
+    st.markdown(f"""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        @import url('{font_url}');
         
-        html, body, [class*="css"] {
-            font-family: 'Inter', sans-serif;
-        }
+        html, body, [class*="css"] {{
+            font-family: {family};
+        }}
         
         /* Gradient Header */
-        .gradient-text {
+        .gradient-text {{
             background: -webkit-linear-gradient(45deg, #00C9FF, #92FE9D);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             font-weight: 800;
             font-size: 3em;
             padding-bottom: 10px;
-        }
+        }}
 
         /* Card Styling */
-        .bet-card {
+        .bet-card {{
             background-color: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 12px;
             padding: 16px;
             margin-bottom: 12px;
             transition: transform 0.2s;
-        }
-        .bet-card:hover {
+        }}
+        .bet-card:hover {{
             transform: translateY(-2px);
             border-color: #00C9FF;
-        }
+        }}
         
         /* Odds Box */
-        .odds-box {
+        .odds-box {{
             background-color: #262a3b;
             color: #00e676;
             font-weight: 700;
@@ -84,10 +99,10 @@ def inject_custom_css():
             border-radius: 8px;
             text-align: center;
             border: 1px solid #00e676;
-        }
+        }}
         
         /* Badges */
-        .badge {
+        .badge {{
             padding: 4px 8px;
             border-radius: 6px;
             font-size: 0.7em;
@@ -95,23 +110,23 @@ def inject_custom_css():
             text-transform: uppercase;
             display: inline-block;
             margin-right: 5px;
-        }
-        .badge-arb { background: linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%); color: #000; }
-        .badge-high { background-color: #ff4b4b; color: white; }
-        .badge-safe { background-color: #00e676; color: #000; }
-        .badge-std { background-color: #31333F; color: #ccc; border: 1px solid #555; }
+        }}
+        .badge-arb {{ background: linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%); color: #000; }}
+        .badge-high {{ background-color: #ff4b4b; color: white; }}
+        .badge-safe {{ background-color: #00e676; color: #000; }}
+        .badge-std {{ background-color: #31333F; color: #ccc; border: 1px solid #555; }}
         
         /* Result Badges */
-        .res-win { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
-        .res-loss { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
-        .res-push { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
-        .res-pending { color: #ffc107; font-weight: bold; font-style: italic; }
+        .res-win {{ background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 2px 8px; border-radius: 4px; font-weight: bold; }}
+        .res-loss {{ background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 2px 8px; border-radius: 4px; font-weight: bold; }}
+        .res-push {{ background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; padding: 2px 8px; border-radius: 4px; font-weight: bold; }}
+        .res-pending {{ color: #ffc107; font-weight: bold; font-style: italic; }}
 
         /* Metrics */
-        div[data-testid="stMetricValue"] {
+        div[data-testid="stMetricValue"] {{
             font-size: 1.5rem;
             color: #00C9FF;
-        }
+        }}
     </style>
     """, unsafe_allow_html=True)
 
