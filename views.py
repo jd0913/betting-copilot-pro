@@ -1,6 +1,6 @@
 # views.py
-# The "Vegas Edition" Layouts (v57.0)
-# Fixes: Smarter Parlay Logic (No Longshots), Clean History
+# The "Vegas Edition" Layouts (v58.0)
+# Fixes: Decimal Bankroll in Tracker, Smart Parlay Logic Retained
 
 import streamlit as st
 import pandas as pd
@@ -102,13 +102,11 @@ def render_dashboard(bankroll, kelly_multiplier):
                                 if is_in_slip:
                                     st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
 
-        # --- SMART PARLAY BUILDER (RE-ENGINEERED) ---
+        # --- SMART PARLAY BUILDER (v57 Logic) ---
         st.markdown("---")
         st.subheader("🧩 Smart Parlay Builder")
         
-        # 1. Filter: Only consider bets with Odds < 2.50 (No Longshots)
-        # 2. Filter: Only consider bets with Confidence > 50% (Probable Winners)
-        # 3. Filter: No Arbitrage bets
+        # Filter: Odds > 1.1 (No super favs), Odds < 2.5 (No longshots), Conf > 50%
         parlay_candidates = df[
             (df['Odds'] > 1.1) & 
             (df['Odds'] < 2.50) & 
@@ -117,34 +115,46 @@ def render_dashboard(bankroll, kelly_multiplier):
         ]
         
         if len(parlay_candidates) >= 2:
-            # Sort by Confidence (Highest probability of hitting)
-            parlay_legs = parlay_candidates.sort_values('Confidence', ascending=False).to_dict('records')
-            
-            best_combo = None
-            
-            # Find the best 2-leg combo from different matches
-            for combo in combinations(parlay_legs[:6], 2): 
+            # 1. Bankroll Builder (Highest Confidence)
+            safe_legs = parlay_candidates.sort_values('Confidence', ascending=False).to_dict('records')
+            safe_combo = None
+            for combo in combinations(safe_legs[:6], 2):
                 if combo[0]['Match'] != combo[1]['Match']:
-                    best_combo = combo
+                    safe_combo = combo
                     break
             
-            if best_combo:
-                total_odds = best_combo[0]['Odds'] * best_combo[1]['Odds']
-                combined_prob = best_combo[0]['Confidence'] * best_combo[1]['Confidence']
-                implied_prob = 1 / total_odds
-                parlay_edge = (combined_prob - implied_prob) / implied_prob
-                
-                st.success(f"🛡️ **Bankroll Builder (Safe Double)**")
-                
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Total Odds", f"{total_odds:.2f}")
-                c2.metric("True Probability", f"{combined_prob:.1%}")
-                c3.metric("Expected Value", f"{parlay_edge:.1%}")
-                
-                st.info(f"1️⃣ **{best_combo[0]['Match']}** -> {best_combo[0]['Bet']} ({best_combo[0]['Odds']})")
-                st.info(f"2️⃣ **{best_combo[1]['Match']}** -> {best_combo[1]['Bet']} ({best_combo[1]['Odds']})")
-            else:
-                st.info("No safe parlay combinations found (Odds too high or low confidence).")
+            # 2. Moonshot (Highest Edge)
+            value_legs = parlay_candidates.sort_values('Edge', ascending=False).to_dict('records')
+            value_combo = None
+            for combo in combinations(value_legs[:6], 2):
+                if combo[0]['Match'] != combo[1]['Match']:
+                    value_combo = combo
+                    break
+
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if safe_combo:
+                    safe_odds = safe_combo[0]['Odds'] * safe_combo[1]['Odds']
+                    safe_prob = safe_combo[0]['Confidence'] * safe_combo[1]['Confidence']
+                    implied_prob = 1 / safe_odds
+                    parlay_edge = (safe_prob - implied_prob) / implied_prob
+                    
+                    st.success(f"🛡️ **Bankroll Builder**")
+                    st.metric("Total Odds", f"{safe_odds:.2f}")
+                    st.metric("True Win Probability", f"{safe_prob:.1%}")
+                    st.caption(f"1. {safe_combo[0]['Match']} ({safe_combo[0]['Bet']})")
+                    st.caption(f"2. {safe_combo[1]['Match']} ({safe_combo[1]['Bet']})")
+            
+            with col2:
+                if value_combo:
+                    value_odds = value_combo[0]['Odds'] * value_combo[1]['Odds']
+                    value_edge = ((1 + value_combo[0]['Edge']) * (1 + value_combo[1]['Edge'])) - 1
+                    st.warning(f"🚀 **Moonshot Value**")
+                    st.metric("Total Odds", f"{value_odds:.2f}")
+                    st.metric("Combined Edge", f"{value_edge:.1%}")
+                    st.caption(f"1. {value_combo[0]['Match']} ({value_combo[0]['Bet']})")
+                    st.caption(f"2. {value_combo[1]['Match']} ({value_combo[1]['Bet']})")
         else:
             st.info("Not enough high-confidence favorites to build a safe parlay.")
 
@@ -171,6 +181,10 @@ def render_market_map():
 
 def render_bet_tracker(bankroll):
     st.markdown('<p class="gradient-text">🎟️ Bet Slip</p>', unsafe_allow_html=True)
+    
+    # *** FIX: Allow decimal input for bankroll here too ***
+    bankroll = st.number_input("Your Bankroll ($)", value=float(bankroll), min_value=0.0, step=0.01, format="%.2f", key="tracker_bankroll")
+    
     if st.session_state.bet_slip:
         slip_df = pd.DataFrame(st.session_state.bet_slip)
         total_stake = 0; potential_return = 0
@@ -242,4 +256,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v57.0 (Enterprise Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v58.0 (Enterprise Edition)")
