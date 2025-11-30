@@ -1,6 +1,6 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v62.1 - FIX: Improved robustness of ROI calculation denominator (total_staked)
+# v62.2 - FIX: Renamed profit metric to fraction/ROI to remove explicit "units"
 
 import streamlit as st
 import pandas as pd
@@ -38,31 +38,34 @@ def load_data(url):
 
 def get_performance_stats(history_df):
     """Calculates live performance metrics from history."""
+    # Ensure all possible keys are returned to prevent front-end errors
+    default_stats = {"win_rate": 0.0, "roi": 0.0, "total_profit_fraction": 0.0, "total_bets": 0, "sport_stats": {}}
+    
     if not isinstance(history_df, pd.DataFrame) or 'Result' not in history_df.columns:
-        return {"win_rate": 0.0, "roi": 0.0, "total_bets": 0, "sport_stats": {}}
+        return default_stats
     
     settled = history_df[history_df['Result'].isin(['Win', 'Loss'])]
     if settled.empty:
-        return {"win_rate": 0.0, "roi": 0.0, "total_bets": 0, "sport_stats": {}}
+        return default_stats
     
     wins = len(settled[settled['Result'] == 'Win'])
     total = len(settled)
-    profit = settled['Profit'].sum()
     
-    # FIX: Robustly calculate total staked (denominator for ROI).
-    total_staked = 0.0
+    # Renamed the variable to reflect profit as a fraction of the bankroll
+    total_profit_fraction = settled['Profit'].sum()
+    
+    # Robustly calculate total risked fraction (denominator for ROI).
+    total_risked_fraction = 0.0
     if 'Stake' in settled.columns:
-        # Use the actual sum of stakes
-        total_staked = settled['Stake'].sum()
+        total_risked_fraction = settled['Stake'].sum()
     
-    # If total staked is 0 (either missing or only 0-stake bets like arbitrage), 
-    # use the total number of bets as the denominator (assuming 1 unit risked per bet).
-    if total_staked <= 0: 
-        total_staked = total
+    # Fallback to number of bets if total risked is zero (e.g. only arbitrage bets)
+    if total_risked_fraction <= 0: 
+        total_risked_fraction = total
 
     win_rate = wins / total
-    # Since total_staked is now guaranteed to be > 0 if total > 0, we can simplify the ROI line.
-    roi = profit / total_staked 
+    # ROI (Return on Investment) is the desired percentage metric
+    roi = total_profit_fraction / total_risked_fraction 
     
     # Per Sport Stats
     sport_stats = {}
@@ -74,7 +77,8 @@ def get_performance_stats(history_df):
             if s_total > 0:
                 sport_stats[sport] = s_wins / s_total
     
-    return {"win_rate": win_rate, "roi": roi, "total_bets": total, "sport_stats": sport_stats}
+    # Use 'roi' (percentage) for front-end display.
+    return {"win_rate": win_rate, "roi": roi, "total_profit_fraction": total_profit_fraction, "total_bets": total, "sport_stats": sport_stats}
 
 def inject_custom_css(font_choice="Clean (Inter)"):
     st.markdown("""
