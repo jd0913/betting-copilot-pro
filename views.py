@@ -1,5 +1,5 @@
 # views.py
-# The "Strict Parlay" Layouts (v66.0)
+# The "Strict Parlay" Layouts (v67.0 - FIX: Removed 'units' from profit display)
 # Fixes: Enforces strict odds limits on "Safe" parlays to prevent high-risk suggestions.
 
 import streamlit as st
@@ -269,9 +269,14 @@ def render_history():
         if 'Result' not in df.columns: st.info("No results settled yet."); st.dataframe(df); return
         settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
         if not settled.empty:
-            total_profit = settled['Profit'].sum(); win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
-            c1, c2 = st.columns(2); c1.metric("Total Profit", f"{total_profit:.2f}u"); c2.metric("Win Rate", f"{win_rate:.1%}"); st.divider()
+            stats = utils.get_performance_stats(df)
+            c1, c2 = st.columns(2)
+            # Display Return on Investment (ROI) Percentage instead of raw profit units/fraction
+            c1.metric("Return on Investment (ROI)", f"{stats['roi']:.1%}") 
+            c2.metric("Win Rate", f"{stats['win_rate']:.1%}")
+            st.divider()
         display_df = df.copy(); display_df['Result'] = display_df['Result'].fillna('Pending'); display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
+        # Display Profit as a plain fractional number, removing the 'u'
         display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
         if 'Formatted_Date' in display_df.columns: display_df = display_df.rename(columns={'Formatted_Date': 'Match Time'})
         elif 'Date' in display_df.columns: display_df = display_df.rename(columns={'Date': 'Match Time'})
@@ -282,4 +287,4 @@ def render_history():
     else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v66.0 (Strict Parlay Edition)")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v67.0 (Strict Parlay Edition - Unitless Profit)")
