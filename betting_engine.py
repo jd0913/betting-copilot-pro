@@ -1,7 +1,7 @@
 # betting_engine.py
 # The Core Logic: AI Models, Data Fetching, Settlement, and Feature Engineering
 # v61.0 - FIX: Implemented Date-Aware Settlement to prevent settling future matches.
-# FIX: Ensured Loss Profit is exactly -Stake.
+# FIX: Ensured Loss Profit is exactly -Stake. (Comments updated to be non-unit specific)
 
 import pandas as pd
 import numpy as np
@@ -29,7 +29,7 @@ from textblob import TextBlob
 import config
 
 # ==============================================================================
-# 1. SMART MATH MODULES (RESTORED)
+# 1. SMART MATH MODULES (Full Feature Set Preserved)
 # ==============================================================================
 def calculate_pythagorean_expectation(points_for, points_against, exponent=1.7):
     if points_for == 0 and points_against == 0: return 0.5
@@ -98,7 +98,7 @@ def evolve_and_train(X, y):
     return calibrated_model, meta_model
 
 # ==============================================================================
-# 3. DATA FETCHING & ARBITRAGE
+# 3. DATA FETCHING & ARBITRAGE (Full Feature Set Preserved)
 # ==============================================================================
 def get_live_odds(sport_key):
     if "PASTE_YOUR" in config.API_CONFIG.get("THE_ODDS_API_KEY", "PASTE_YOUR"): 
@@ -115,7 +115,6 @@ def get_live_odds(sport_key):
         return []
 
 def find_arbitrage(game, sport_type):
-    # ... (Arbitrage logic is preserved)
     best_home = {'price': 0, 'book': ''}; best_away = {'price': 0, 'book': ''}; best_draw = {'price': 0, 'book': ''}
     for bookmaker in game['bookmakers']:
         h2h = next((m for m in bookmaker['markets'] if m['key'] == 'h2h'), None)
@@ -147,7 +146,6 @@ def fuzzy_match_team(team_name, team_list):
 
 def get_news_alert(team1, team2):
     try:
-        # ... (Web scraping logic is preserved)
         headers = {'User-Agent': 'Mozilla/5.0'}
         query = f'"{team1}" OR "{team2}" injury OR doubt OR out'
         url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbm=nws"
@@ -170,7 +168,6 @@ def get_news_alert(team1, team2):
 # 4. GLOBAL SOCCER MODULE (Full Feature Set Preserved)
 # ==============================================================================
 def calculate_soccer_features(df):
-    # ... (Feature calculation with Elo, Pyth, Volatility is preserved)
     teams = pd.concat([df['HomeTeam'], df['AwayTeam']]).unique(); elo_ratings = {team: 1500 for team in teams}; k_factor = 20; home_elos, away_elos = [], []; team_variance = {team: [] for team in teams}
     team_goals_for = {team: 0 for team in teams}
     team_goals_against = {team: 0 for team in teams}
@@ -216,7 +213,6 @@ def train_league_brain(div_code):
     
     df, elo_ratings, volatility_map, gf, ga = calculate_soccer_features(df)
     
-    # ... (Form calculation logic is preserved)
     h_stats = df[['Date', 'HomeTeam', 'FTR']].rename(columns={'HomeTeam': 'Team'}); h_stats['Points'] = h_stats['FTR'].map({'H': 3, 'D': 1, 'A': 0})
     a_stats = df[['Date', 'AwayTeam', 'FTR']].rename(columns={'AwayTeam': 'Team'}); a_stats['Points'] = a_stats['FTR'].map({'A': 3, 'D': 1, 'H': 0})
     all_stats = pd.concat([h_stats, a_stats]).sort_values('Date'); all_stats['Form_EWMA'] = all_stats.groupby('Team')['Points'].transform(lambda x: x.ewm(span=5, adjust=False).mean().shift(1))
@@ -244,7 +240,6 @@ def train_league_brain(div_code):
     return {'model': living_model, 'meta_model': meta_model, 'le': le, 'scaler': scaler, 'elo_ratings': elo_ratings, 'volatility': volatility_map, 'team_strengths': team_strengths, 'avgs': (avg_goals_home, avg_goals_away), 'gf': gf, 'ga': ga}, df
 
 def run_global_soccer_module():
-    # ... (Execution logic is preserved)
     print("--- Running Global Soccer Module (Big 5 + UCL) ---"); bets = []
     LEAGUE_MAP = {'soccer_epl': 'E0', 'soccer_spain_la_liga': 'SP1', 'soccer_germany_bundesliga': 'D1', 'soccer_italy_serie_a': 'I1', 'soccer_france_ligue_one': 'F1', 'soccer_uefa_champs_league': 'UCL'}
     for sport_key, div_code in LEAGUE_MAP.items():
@@ -285,7 +280,6 @@ def run_global_soccer_module():
     return pd.DataFrame(bets)
 
 def run_nfl_module():
-    # ... (NFL logic is preserved)
     print("--- Running NFL Module ---"); bets = []; odds_data = get_live_odds('americanfootball_nfl')
     team_map = config.NFL_TEAMS
     try: 
@@ -311,7 +305,6 @@ def run_nfl_module():
     return pd.DataFrame(bets)
 
 def run_nba_module():
-    # ... (NBA logic is preserved)
     print("--- Running NBA Module ---"); bets = []; odds_data = get_live_odds('basketball_nba'); team_power = {}; team_names = []
     try: 
         stats = leaguedashteamstats.LeagueDashTeamStats(season="2023-24", measure_type_detailed_defense="Four Factors").get_data_frames()[0]; 
@@ -340,7 +333,6 @@ def run_nba_module():
     return pd.DataFrame(bets)
 
 def run_mlb_module():
-    # ... (MLB logic is preserved)
     print("--- Running MLB Module ---"); bets = []; odds_data = get_live_odds('baseball_mlb')
     for game in odds_data:
         profit, arb_info, bh, _, ba = find_arbitrage(game, 'MLB'); match_time = game.get('commence_time', 'Unknown')
@@ -402,10 +394,11 @@ def settle_bets():
 
                         if won:
                             df.loc[idx, 'Result'] = 'Win'
+                            # P&L is calculated as a fraction of the stake risked
                             df.loc[idx, 'Profit'] = stake * (odds - 1)
                         else:
                             df.loc[idx, 'Result'] = 'Loss'
-                            # FIX 2: Ensure loss profit is exactly -stake
+                            # Loss is the negative fraction of the stake risked
                             df.loc[idx, 'Profit'] = -stake
                             
                         df.loc[idx, 'Score'] = f"{match.iloc[0]['FTHG']}-{match.iloc[0]['FTAG']}"
