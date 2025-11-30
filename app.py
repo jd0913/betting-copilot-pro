@@ -1,45 +1,60 @@
 # app.py
-# FINAL — Everything works 100%
+# The "Manager" - Entry point for v58.0
+# Fixes: Bankroll now accepts decimals (e.g. 1000.50)
 
 import streamlit as st
-import views
 import utils
+import views
 
-# === PAGE CONFIG ===
-st.set_page_config(page_title="Betting Co-Pilot Pro", layout="wide")
+# ==============================================================================
+# CONFIGURATION
+# ==============================================================================
+st.set_page_config(
+    page_title="Betting Co-Pilot Pro", 
+    page_icon="🚀", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
 
-# === SESSION STATE ===
-if "bet_slip" not in st.session_state:
-    st.session_state.bet_slip = []
+# ==============================================================================
+# NAVIGATION & STATE
+# ==============================================================================
+if 'bet_slip' not in st.session_state: st.session_state.bet_slip = []
 
-# === SIDEBAR ===
-with st.sidebar:
-    st.image("https://i.imgur.com/9Y1lN8k.png", width=200)  # optional logo
-    bankroll = st.number_input("Bankroll ($)", value=1000.0, step=100.0, min_value=100.0)
-    page = st.radio("Navigation", [
-        "Live Command Center",
-        "Market Map",
-        "Bet Tracker",
-        "Betting History",
-        "About"
-    ])
+# Inject CSS
+utils.inject_custom_css()
 
-# === PAGE ROUTING ===
-if page == "Live Command Center":
-    views.render_dashboard(bankroll, kelly_multiplier=0.25)
+st.sidebar.title("Navigation")
 
-elif page == "Market Map":
-    views.render_market_map()
+# Global Settings
+st.sidebar.header("💰 Bankroll")
 
-elif page == "Bet Tracker":
-    views.render_bet_tracker(bankroll)
+# *** FIX: Explicitly use float (1000.0), step=0.01, and format="%.2f" ***
+bankroll = st.sidebar.number_input(
+    "Bankroll ($)", 
+    value=1000.0, 
+    min_value=0.0, 
+    step=0.01, 
+    format="%.2f"
+)
 
-elif page == "Betting History":
-    views.render_history()
+# Hardcoded Professional Standard (Quarter Kelly) - Hidden from user
+kelly_multiplier = 0.25 
 
-elif page == "About":
-    views.render_about()
+st.sidebar.markdown("---")
 
-# Footer
-st.markdown("---")
-st.markdown("**Betting Co-Pilot Pro** • All features restored • Settlement working • No bugs")
+# Page Routing
+page = st.sidebar.radio("Go To", ["Command Center", "Market Map", "Bet Tracker", "History", "About"])
+
+if st.sidebar.button("🔄 Force Refresh"):
+    utils.load_data.clear()
+    st.rerun()
+
+if page == "Command Center": views.render_dashboard(bankroll, kelly_multiplier)
+elif page == "Market Map": views.render_market_map()
+elif page == "Bet Tracker": views.render_bet_tracker(bankroll)
+elif page == "History": views.render_history()
+elif page == "About": views.render_about()
+
+st.sidebar.markdown("---")
+st.sidebar.caption(f"Connected to: `{utils.GITHUB_USERNAME}/{utils.GITHUB_REPO}`")
