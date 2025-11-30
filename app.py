@@ -1,87 +1,60 @@
 # app.py
-# Streamlit Frontend — Betting Co-Pilot Pro v67.0
-# FINAL VERSION — All fixes applied
+# The "Manager" - Entry point for v58.0
+# Fixes: Bankroll now accepts decimals (e.g. 1000.50)
 
 import streamlit as st
-from streamlit_option_menu import option_menu
-import pandas as pd
 import utils
 import views
 
 # ==============================================================================
-# SESSION STATE INITIALIZATION
+# CONFIGURATION
 # ==============================================================================
-if "bet_slip" not in st.session_state:
-    st.session_state.bet_slip = []
-
-if "bankroll" not in st.session_state:
-    st.session_state.bankroll = 25000.0
-
-if "kelly_multiplier" not in st.session_state:
-    st.session_state.kelly_multiplier = 1.0  # 1.0 = true quarter Kelly
-
-# ==============================================================================
-# PAGE CONFIG
-# ==============================================================================
-st.set_page_config(page_title="Betting Co-Pilot Pro v67", layout="wide", page_icon="Rocket")
-utils.inject_custom_css()
-
-# ==============================================================================
-# SIDEBAR
-# ==============================================================================
-with st.sidebar:
-    st.markdown("# Betting Co-Pilot Pro v67")
-    st.markdown("### Bankroll")
-    st.session_state.bankroll = st.number_input(
-        "Current Bankroll ($)", 
-        min_value=100.0, 
-        value=st.session_state.bankroll, 
-        step=100.0,
-        format="%.2f"
-    )
-    
-    st.markdown("### Risk Settings")
-    st.session_state.kelly_multiplier = st.slider(
-        "Kelly Multiplier", 
-        0.1, 3.0, 1.0, 0.1,
-        help="1.0 = True Quarter Kelly • 2.0 = Half Kelly"
-    )
-    
-    if st.button("Force Refresh Data"):
-        utils.get_latest_bets.clear()
-        utils.get_history.clear()
-        st.success("Cache cleared — reloading...")
-        st.rerun()
-
-    st.divider()
-    st.markdown("Made with blood, sweat, and +17% ROI")
-    st.caption("v67.0 — The Final Form")
-
-# ==============================================================================
-# NAVIGATION
-# ==============================================================================
-selected = option_menu(
-    menu_title=None,
-    options=["Dashboard", "Market Map", "Bet Slip", "History", "About"],
-    icons=["rocket", "graph-up", "cart", "clock", "info-circle"],
-    default_index=0,
-    orientation="horizontal"
+st.set_page_config(
+    page_title="Betting Co-Pilot Pro", 
+    page_icon="🚀", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
 )
 
 # ==============================================================================
-# ROUTING
+# NAVIGATION & STATE
 # ==============================================================================
-if selected == "Dashboard":
-    views.render_dashboard(st.session_state.bankroll, st.session_state.kelly_multiplier)
+if 'bet_slip' not in st.session_state: st.session_state.bet_slip = []
 
-elif selected == "Market Map":
-    views.render_market_map()
+# Inject CSS
+utils.inject_custom_css()
 
-elif selected == "Bet Slip":
-    views.render_bet_tracker(st.session_state.bankroll)
+st.sidebar.title("Navigation")
 
-elif selected == "History":
-    views.render_history()
+# Global Settings
+st.sidebar.header("💰 Bankroll")
 
-elif selected == "About":
-    views.render_about()
+# *** FIX: Explicitly use float (1000.0), step=0.01, and format="%.2f" ***
+bankroll = st.sidebar.number_input(
+    "Bankroll ($)", 
+    value=1000.0, 
+    min_value=0.0, 
+    step=0.01, 
+    format="%.2f"
+)
+
+# Hardcoded Professional Standard (Quarter Kelly) - Hidden from user
+kelly_multiplier = 0.25 
+
+st.sidebar.markdown("---")
+
+# Page Routing
+page = st.sidebar.radio("Go To", ["Command Center", "Market Map", "Bet Tracker", "History", "About"])
+
+if st.sidebar.button("🔄 Force Refresh"):
+    utils.load_data.clear()
+    st.rerun()
+
+if page == "Command Center": views.render_dashboard(bankroll, kelly_multiplier)
+elif page == "Market Map": views.render_market_map()
+elif page == "Bet Tracker": views.render_bet_tracker(bankroll)
+elif page == "History": views.render_history()
+elif page == "About": views.render_about()
+
+st.sidebar.markdown("---")
+st.sidebar.caption(f"Connected to: `{utils.GITHUB_USERNAME}/{utils.GITHUB_REPO}`")
