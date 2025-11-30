@@ -6,7 +6,6 @@ joblib
 tqdm
 matplotlib
 streamlit
-streamlit-option-menu        # ← HYPHEN, NOT UNDERSCORE — THIS IS THE REAL NAME
 plotly
 requests
 beautifulsoup4
@@ -14,9 +13,7 @@ lxml
 scipy
 nfl_data_py
 nba_api
-pybaseball
 fuzzywuzzy
 python-levenshtein
 textblob
-python-dotenv
-cachetools
+pybaseball
