@@ -1,5 +1,6 @@
 # views.py
-# FINAL v75 — YOUR ORIGINAL LAYOUT, FULLY FIXED, EVERYTHING BACK
+# The "Strict Parlay" Layouts (v66.0)
+# Fixes: Enforces strict odds limits on "Safe" parlays to prevent high-risk suggestions.
 
 import streamlit as st
 import pandas as pd
@@ -8,170 +9,277 @@ import plotly.graph_objects as go
 from itertools import combinations
 import utils
 
-# Inject your beautiful CSS
-utils.inject_custom_css()
-
 def render_dashboard(bankroll, kelly_multiplier):
-    st.markdown('<p class="gradient-text">Live Command Center</p>', unsafe_allow_html=True)
+    st.markdown('<p class="gradient-text">🚀 Live Command Center</p>', unsafe_allow_html=True)
     
     df = utils.load_data(utils.LATEST_URL)
     
-    # Handle loading states (your original style)
-    if isinstance(df, str):
-        if "NOT_FOUND" in df or "ERROR" in df:
-            st.error("No data — run backend_runner.py first!")
-            st.stop()
-        if df == "NO_BETS_FOUND":
-            st.success("System Online • No Value Today")
-            st.balloons()
-            st.stop()
-
-    # Risk Controls (your original)
-    with st.expander("Risk & Tilt Control", expanded=False):
+    # --- 1. TILT CONTROL ---
+    with st.expander("🛡️ Risk & Tilt Control", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
-            max_risk = st.number_input("Max Daily Risk %", 1.0, 20.0, 5.0)
+            max_daily_risk = st.number_input("Max Daily Risk (% of Bankroll)", value=5.0, step=0.5)
         with c2:
-            st.caption("Quarter Kelly enforced globally")
-        st.warning(f"Max daily exposure: **${bankroll * max_risk/100:.0f}**")
+            win_goal = st.number_input("Daily Profit Goal ($)", value=50.0, step=10.0)
+        max_risk_dollars = bankroll * (max_daily_risk / 100)
+        st.caption(f"🛑 Warning threshold: **${max_risk_dollars:.2f}** exposure.")
 
-    # KPIs
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Active Bets", len(df))
-    c2.metric("Top Edge", f"{df['Edge'].max():.1%}")
-    c3.metric("Avg Edge", f"{df['Edge'].mean():.1%}")
-
-    # YOUR GORGEOUS SMART PICKS CARDS (BACK EXACTLY AS BEFORE)
-    st.markdown("### Top Smart Picks")
-    candidates = df[df['Bet Type'] != 'ARBITRAGE'].copy()
-
-    picks = []
-    # Banker
-    banker = candidates[candidates['Odds'] < 2.0].sort_values('Confidence', ascending=False).head(1)
-    if not banker.empty:
-        picks.append({"label": "The Banker", "row": banker.iloc[0], "color": "#00e676", "reason": "High confidence, low risk"})
-
-    # Value Play
-    value = candidates.sort_values('Edge', ascending=False).iloc[0]
-    picks.append({"label": "The Value Play", "row": value, "color": "#00C9FF", "reason": "Highest edge"})
-
-    # Diversifier
-    used = [p['row']['Match'] for p in picks]
-    div = candidates[~candidates['Match'].isin(used)].sort_values('Edge', ascending=False)
-    if not div.empty:
-        picks.append({"label": "Diversifier", "row": div.iloc[0], "color": "#FFD700", "reason": "Portfolio balance"})
-
-    cols = st.columns(len(picks))
-    for col, pick in zip(cols, picks):
-        r = pick['row']
-        stake = bankroll * r['Stake'] * 4
-        with col:
-            st.markdown(f"""
-            <div class="bet-card" style="border-left:5px solid {pick['color']}">
-                <div style="font-weight:bold; color:{pick['color']}">{pick['label']}</div>
-                <div style="font-size:1.3em; font-weight:bold; margin:10px 0">
-                    {utils.get_team_emoji(r['Sport'])} {r['Match']}
-                </div>
-                <div style="color:#00e676; font-weight:bold">{r['Bet']} @ {r['Odds']:.2f}</div>
-                <div style="margin:8px 0">Edge: <strong>{r['Edge']:.1%}</strong> | Conf: <strong>{r['Confidence']:.1%}</strong></div>
-                <div style="background:rgba(0,201,255,0.1); padding:10px; border-radius:8px">
-                    Stake: <strong>${stake:.0f}</strong>
-                </div>
-                <div style="font-size:0.8em; color:#888; margin-top:8px">{pick['reason']}</div>
+    if isinstance(df, pd.DataFrame):
+        # --- FILTERS ---
+        sports = ["All"] + list(df['Sport'].unique()) if 'Sport' in df.columns else ["All"]
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            selected_sport = st.sidebar.selectbox("Filter Sport", sports)
+        
+        if selected_sport != "All": df = df[df['Sport'] == selected_sport]
+        
+        # --- KPI CARDS ---
+        total_bets = len(df)
+        top_edge = df['Edge'].max() if not df.empty else 0
+        
+        kpi_html = f"""
+        <div style="display:flex; gap:10px; margin-bottom:20px;">
+            <div style="flex:1; background:#1e2130; padding:15px; border-radius:10px; border:1px solid #2b2f44; text-align:center;">
+                <div style="color:#8b92a5; font-size:0.8em; font-weight:bold;">ACTIVE BETS</div>
+                <div style="font-size:1.8em; font-weight:800; color:white;">{total_bets}</div>
             </div>
-            """, unsafe_allow_html=True)
-            if st.button("Add", key=f"pick_{r.name}"):
-                bet = r.to_dict()
-                bet['User_Stake'] = stake
-                if bet not in st.session_state.bet_slip:
-                    st.session_state.bet_slip.append(bet)
-                    st.success("Added!")
+            <div style="flex:1; background:#1e2130; padding:15px; border-radius:10px; border:1px solid #2b2f44; text-align:center;">
+                <div style="color:#8b92a5; font-size:0.8em; font-weight:bold;">TOP EDGE</div>
+                <div style="font-size:1.8em; font-weight:800; color:#00e676;">{top_edge:.1%}</div>
+            </div>
+        </div>
+        """
+        st.markdown(kpi_html, unsafe_allow_html=True)
 
-    # ALL 32+ BETS TABLE (fully visible)
-    with st.expander("All Active Bets", expanded=False):
-        disp = df.copy()
-        disp['Risk'] = disp.apply(utils.get_risk_badge, axis=1)
-        disp['Edge'] = (disp['Edge']*100).round(1).astype(str) + "%"
-        disp['Conf'] = (disp['Confidence']*100).round(0).astype(str) + "%"
-        disp['Stake $'] = (disp['Stake'] * bankroll * 4).round(0).astype(int)
-        disp = disp[['Risk', 'Sport', 'Match', 'Bet', 'Odds', 'Edge', 'Conf', 'Stake $']]
-        st.markdown(disp.to_html(escape=False, index=False), unsafe_allow_html=True)
+        # --- DYNAMIC SMART PICKS ---
+        st.markdown("### 🔥 Smart Daily Picks")
+        candidates = df[df['Bet Type'] != 'ARBITRAGE'].copy()
 
-    # PARLAY BUILDER (your original)
-    st.markdown("### Parlay Builder")
-    tabs = st.tabs(["Bankroll Builder", "Value Stack", "Lotto Ticket", "Hail Mary"])
-    safe = candidates[(candidates['Odds'] < 2.5) & (candidates['Confidence'] > 0.6)]
-    high_edge = candidates[candidates['Edge'] > 0.08]
+        if not candidates.empty:
+            smart_picks = []
+            
+            # Slot 1: THE BANKER (Strict: Odds < 2.0, High Conf)
+            banker_candidates = candidates[candidates['Odds'] < 2.0]
+            if not banker_candidates.empty:
+                banker = banker_candidates.sort_values('Confidence', ascending=False).iloc[0]
+                smart_picks.append({"Label": "🛡️ The Banker", "Row": banker, "Color": "#00e676", "Reason": "Safe Favorite"})
+            
+            # Slot 2: THE VALUE PLAY
+            remaining = candidates[~candidates['Match'].isin([p['Row']['Match'] for p in smart_picks])]
+            if not remaining.empty:
+                value_play = remaining.sort_values('Edge', ascending=False).iloc[0]
+                smart_picks.append({"Label": "🚀 The Value Play", "Row": value_play, "Color": "#00C9FF", "Reason": "Max Edge"})
+            
+            # Slot 3: DIVERSIFIER
+            used_matches = [p['Row']['Match'] for p in smart_picks]
+            remaining = candidates[~candidates['Match'].isin(used_matches)]
+            if not remaining.empty:
+                div_pick = remaining.sort_values('Edge', ascending=False).iloc[0]
+                smart_picks.append({"Label": "⚖️ Diversifier", "Row": div_pick, "Color": "#FFD700", "Reason": "Portfolio Balance"})
 
-    def build_parlay(pool, legs, name):
-        if len(pool) < legs:
-            st.info(f"Not enough bets for {legs}-leg {name}")
-            return
-        best = max(combinations(pool.iterrows(), legs), key=lambda x: sum(r[1]['Edge'] for r in x))
-        odds = np.prod([r[1]['Odds'] for r in best])
-        stake = bankroll * 0.005 * max(1, sum(r[1]['Edge'] for r in best)/0.1)
-        st.markdown(f"#### {name} ({legs} legs) → {odds:.2f}x")
-        for _, r in best:
-            st.write(f"• {r['Match']} → **{r['Bet']}** @{r['Odds']:.2f}")
-        st.metric("Potential Return", f"${stake*odds:.0f}")
-        st.caption(f"Stake: ${stake:.0f}")
+            if smart_picks:
+                cols = st.columns(len(smart_picks))
+                for idx, pick in enumerate(smart_picks):
+                    row = pick['Row']
+                    sport_icon = utils.get_team_emoji(row.get('Sport', 'Soccer'))
+                    rec_stake = bankroll * row.get('Stake', 0.01) * (kelly_multiplier / 0.25)
+                    with cols[idx]:
+                        st.markdown(f"""
+                        <div style="background-color: #1e2130; border: 1px solid {pick['Color']}; border-radius: 12px; padding: 15px; text-align: center; height: 100%;">
+                            <div style="color: {pick['Color']}; font-weight: bold; text-transform: uppercase; font-size: 0.8em; margin-bottom: 5px;">{pick['Label']}</div>
+                            <div style="font-size: 1.0em; font-weight: bold; margin-bottom: 5px;">{sport_icon} {row['Match']}</div>
+                            <div style="color: white; font-weight: bold; font-size: 1.1em; margin-bottom: 10px;">{row['Bet']}</div>
+                            <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 10px;">
+                                <div><div style="font-size: 0.7em; color: #888;">ODDS</div><div style="font-weight: bold; color: #fff;">{row['Odds']:.2f}</div></div>
+                                <div><div style="font-size: 0.7em; color: #888;">EDGE</div><div style="font-weight: bold; color: {pick['Color']};">{row['Edge']:.1%}</div></div>
+                            </div>
+                            <div style="margin-top: 10px; font-size: 0.9em;">Stake: <span style="color: {pick['Color']}; font-weight: bold;">${rec_stake:.2f}</span></div>
+                        </div>
+                        """, unsafe_allow_html=True)
+            else:
+                st.info("No smart picks available.")
 
-    with tabs[0]: build_parlay(safe, 2, "Bankroll Builder")
-    with tabs[1]: build_parlay(high_edge, 3, "Value Stack")
-    with tabs[2]: build_parlay(high_edge, 4, "Lotto Ticket")
-    with tabs[3]: build_parlay(high_edge, 5, "Hail Mary")
+        # --- MAIN FEED ---
+        st.markdown("---")
+        st.markdown("### 📋 Full Recommendations")
+        
+        current_exposure = 0.0
+        if not df.empty:
+            df['key'] = df['Match'] + "_" + df['Bet']
+
+        for i, row in df.iterrows():
+            sport_icon = utils.get_team_emoji(row.get('Sport', 'Soccer'))
+            match_time = row.get('Formatted_Date', 'Time TBD')
+            risk_badge = utils.get_risk_badge(row)
+            bookie = row.get('Info', 'Best Price')
+            if pd.isna(bookie): bookie = "Best Price"
+            
+            stake_pct = row.get('Stake', 0.01)
+            cash_stake = bankroll * stake_pct * (kelly_multiplier / 0.25)
+            
+            current_exposure += cash_stake
+            risk_warning = ""
+            if current_exposure > max_risk_dollars:
+                risk_warning = f"⚠️ **SKIP:** Daily risk limit (${max_risk_dollars:.2f}) exceeded."
+                cash_stake = 0
+            
+            with st.container():
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    st.markdown(f"""
+                    <div class="bet-ticket">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <span style="color:#8b92a5; font-size:0.8em;">{match_time} • {row.get('League', 'League')}</span>
+                            {risk_badge}
+                        </div>
+                        <div style="font-size:1.3em; font-weight:700; margin-bottom:5px;">
+                            {sport_icon} {row['Match']}
+                        </div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="color:#00C9FF; font-weight:600;">{row['Bet']}</span>
+                            <span style="color:#555;">|</span>
+                            <span style="color:#8b92a5; font-size:0.9em;">{bookie}</span>
+                        </div>
+                        <div style="margin-top:15px; display:flex; gap:20px;">
+                            <div><div class="metric-label">EDGE</div><div class="metric-value" style="color:#00e676;">{row['Edge']:.1%}</div></div>
+                            <div><div class="metric-label">CONF</div><div class="metric-value">{row['Confidence']:.1%}</div></div>
+                            <div><div class="metric-label">STAKE</div><div class="metric-value">${cash_stake:.2f}</div></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if risk_warning: st.error(risk_warning)
+                
+                with c2:
+                    st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row['Odds']:.2f}</div></div>""", unsafe_allow_html=True)
+                    
+                    with st.expander("Details"):
+                        if row['Odds'] > 0: st.write(f"**Implied:** {(1/row['Odds']):.1%}")
+                        else: st.write("**Implied:** N/A")
+                        key = row['key']
+                        is_in_slip = any(b['key'] == key for b in st.session_state.bet_slip)
+                        if st.checkbox("Add to Slip", value=is_in_slip, key=key):
+                            if not is_in_slip:
+                                row_data = row.to_dict(); row_data['User_Stake'] = cash_stake
+                                st.session_state.bet_slip.append(row_data); st.rerun()
+                        else:
+                            if is_in_slip:
+                                st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b['key'] != key]; st.rerun()
+
+        # --- STRICT PARLAY BUILDER ---
+        st.markdown("---")
+        st.subheader("🧩 Smart Parlay Builder")
+        
+        # 1. Safe Candidates: Odds < 2.20 (Favorites Only)
+        safe_candidates = df[(df['Odds'] > 1.1) & (df['Odds'] < 2.20) & (df['Bet Type'] != 'ARBITRAGE')]
+        
+        # 2. Value Candidates: Any Odds (for Moonshots)
+        value_candidates = df[(df['Odds'] > 1.1) & (df['Bet Type'] != 'ARBITRAGE')]
+        
+        if len(value_candidates) >= 2:
+            tab1, tab2, tab3, tab4 = st.tabs(["🛡️ Safe (2-Leg)", "🚀 Value (3-Leg)", "🎰 Lotto (4-Leg)", "☄️ Hail Mary (5-Leg)"])
+
+            def render_parlay_card(pool, num_legs, title):
+                # Limit pool size for performance
+                pool = pool.sort_values('Edge', ascending=False).head(12).to_dict('records')
+                
+                if len(pool) < num_legs:
+                    st.info(f"Not enough suitable bets found for {title}.")
+                    return
+
+                best_combo = None
+                best_score = -1
+                
+                for combo in combinations(pool, num_legs):
+                    if len(set([c['Match'] for c in combo])) == num_legs:
+                        score = (np.prod([1 + c['Edge'] for c in combo])) - 1
+                        if score > best_score:
+                            best_score = score
+                            best_combo = combo
+                
+                if best_combo:
+                    tot_odds = np.prod([c['Odds'] for c in best_combo])
+                    tot_prob = np.prod([c['Confidence'] for c in best_combo])
+                    kelly_stake_pct = (best_score / (tot_odds - 1)) * kelly_multiplier if tot_odds > 1 else 0
+                    kelly_stake_cash = bankroll * kelly_stake_pct
+                    
+                    c1, c2 = st.columns([2, 1])
+                    with c1:
+                        st.markdown(f"#### {title}")
+                        for leg in best_combo:
+                            st.markdown(f"• **{leg['Bet']}** @ {leg['Odds']:.2f} ({leg['Match']})")
+                    with c2:
+                        st.metric("Total Odds", f"{tot_odds:.2f}")
+                        st.metric("Win Prob", f"{tot_prob:.1%}")
+                        st.metric("Rec. Stake", f"${kelly_stake_cash:.2f}")
+                    
+                    user_stake = st.number_input(f"Wager ($) - {title}", min_value=0.0, value=float(int(kelly_stake_cash)) if kelly_stake_cash > 1 else 5.0, step=5.0)
+                    st.success(f"💰 Potential Payout: **${user_stake * tot_odds:.2f}**")
+                else:
+                    st.info("Could not build a valid parlay.")
+
+            # Pass specific pools to specific tabs
+            with tab1: render_parlay_card(safe_candidates, 2, "Bankroll Builder")
+            with tab2: render_parlay_card(value_candidates, 3, "Value Stack")
+            with tab3: render_parlay_card(value_candidates, 4, "Lotto Ticket")
+            with tab4: render_parlay_card(value_candidates, 5, "Hail Mary")
+
+        else:
+            st.info("Not enough value bets to build a parlay.")
+
+    elif df == "NO_BETS_FOUND":
+        st.success("✅ System Online. Market Scanned. No Value Found.")
+    else:
+        st.error("Connection Error. Check GitHub configuration.")
 
 def render_market_map():
-    st.markdown('<p class="gradient-text">Market Map</p>', unsafe_allow_html=True)
+    st.markdown('<p class="gradient-text">🗺️ Market Map</p>', unsafe_allow_html=True)
     df = utils.load_data(utils.LATEST_URL)
-    if isinstance(df, str) or df.empty:
-        st.info("No data")
-        return
-    df = df[df['Bet Type'] != 'ARBITRAGE']
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=1/df['Odds'], y=df['Confidence'],
-                             mode='markers',
-                             marker=dict(size=df['Edge']*300+10, color=df['Edge'], colorscale='Viridis', showscale=True),
-                             text=df['Match'] + " " + df['Bet']))
-    fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash')))
-    fig.update_layout(template="plotly_dark", height=600)
-    st.plotly_chart(fig, use_container_width=True)
+    if isinstance(df, pd.DataFrame):
+        if 'Bet Type' in df.columns: df = df[df['Bet Type'] != 'ARBITRAGE']
+        df = df[df['Odds'] > 0]
+        if not df.empty:
+            df['Implied'] = 1 / df['Odds']
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', name='Fair Value', line=dict(color='#444', dash='dash')))
+            fig.add_trace(go.Scatter(x=df['Implied'], y=df['Confidence'], mode='markers', marker=dict(size=df['Edge']*150 + 10, color=df['Edge'], colorscale='Viridis', showscale=True), text=df['Match'] + '<br>' + df['Bet'], hoverinfo='text'))
+            fig.update_layout(template="plotly_dark", height=600, xaxis_title="Implied Prob", yaxis_title="Model Prob")
+            st.plotly_chart(fig, use_container_width=True)
+        else: st.info("No valid bets for Market Map.")
+    else: st.info("No data loaded.")
 
 def render_bet_tracker(bankroll):
-    st.markdown('<p class="gradient-text">Bet Slip</p>', unsafe_allow_html=True)
+    st.markdown('<p class="gradient-text">🎟️ Bet Slip</p>', unsafe_allow_html=True)
+    bankroll = st.number_input("Your Bankroll ($)", value=float(bankroll), min_value=0.0, step=0.01, format="%.2f", key="tracker_bankroll")
     if st.session_state.bet_slip:
-        slip = pd.DataFrame(st.session_state.bet_slip)
-        total = slip['User_Stake'].sum()
-        odds = np.prod(slip['Odds']) if len(slip)>1 else slip['Odds'].iloc[0]
-        c1,c2,c3 = st.columns(3)
-        c1.metric("Stake", f"${total:.0f}")
-        c2.metric("Odds", f"{odds:.2f}x")
-        c3.metric("Potential", f"${total*odds:.0f}")
-        if st.button("Clear Slip"):
-            st.session_state.bet_slip = []
-            st.rerun()
-    else:
-        st.info("Slip empty")
+        slip_df = pd.DataFrame(st.session_state.bet_slip)
+        total_stake = 0; potential_return = 0
+        for i, bet in slip_df.iterrows():
+            st.markdown(f"""<div class="bet-ticket" style="border-left: 4px solid #00C9FF;"><div style="display:flex; justify-content:space-between;"><div style="font-weight:bold;">{bet['Match']}</div><div style="color:#00e676;">{bet['Odds']:.2f}</div></div><div style="font-size:0.9em; color:#ccc;">{bet['Bet']}</div><div style="margin-top:10px; font-size:0.8em; color:#888;">Stake: <span style="color:white;">${bet.get('User_Stake', 0):.2f}</span></div></div>""", unsafe_allow_html=True)
+            total_stake += bet.get('User_Stake', 0); potential_return += bet.get('User_Stake', 0) * bet['Odds']
+        st.divider(); c1, c2 = st.columns(2)
+        c1.metric("Total Stake", f"${total_stake:.2f}"); c2.metric("Potential Return", f"${potential_return:.2f}")
+        if st.button("Clear Slip"): st.session_state.bet_slip = []; st.rerun()
+    else: st.info("Your bet slip is empty.")
 
 def render_history():
-    st.markdown('<p class="gradient-text">Betting History</p>', unsafe_allow_html=True)
+    st.markdown('<p class="gradient-text">📜 History</p>', unsafe_allow_html=True)
+    st.markdown("""<style>th { text-align: center !important; } td { text-align: center !important; }</style>""", unsafe_allow_html=True)
     df = utils.load_data(utils.HISTORY_URL)
-    if isinstance(df, str):
-        st.info("No history yet")
-        return
-    stats = utils.get_performance_stats(df)
-    c1,c2,c3,c4 = st.columns(4)
-    c1.metric("Profit", f"${stats['total_profit']:.2f}")
-    c2.metric("ROI", f"{stats['roi']:.1%}")
-    c3.metric("Win Rate", f"{stats['win_rate']:.1%}")
-    c4.metric("Bets", stats['total_bets'])
-    
-    disp = df.copy()
-    disp['Status'] = disp['Result'].apply(utils.format_result_badge)
-    disp['Formatted_Date'] = disp.get('Formatted_Date', 'TBD')
-    disp = disp[['Formatted_Date','Sport','Match','Bet','Odds','Status','Profit','Score']]
-    st.markdown(disp.to_html(escape=False, index=False), unsafe_allow_html=True)
+    if isinstance(df, pd.DataFrame):
+        if 'Result' not in df.columns: st.info("No results settled yet."); st.dataframe(df); return
+        settled = df[df['Result'].isin(['Win', 'Loss', 'Push'])]
+        if not settled.empty:
+            total_profit = settled['Profit'].sum(); win_rate = len(settled[settled['Result'] == 'Win']) / len(settled)
+            c1, c2 = st.columns(2); c1.metric("Total Profit", f"{total_profit:.2f}u"); c2.metric("Win Rate", f"{win_rate:.1%}"); st.divider()
+        display_df = df.copy(); display_df['Result'] = display_df['Result'].fillna('Pending'); display_df['Status'] = display_df['Result'].apply(utils.format_result_badge)
+        display_df['Profit'] = np.where(display_df['Result'] == 'Pending', '-', display_df['Profit'].fillna(0.0).map('{:.2f}'.format))
+        if 'Formatted_Date' in display_df.columns: display_df = display_df.rename(columns={'Formatted_Date': 'Match Time'})
+        elif 'Date' in display_df.columns: display_df = display_df.rename(columns={'Date': 'Match Time'})
+        cols = ['Match Time', 'Sport', 'Match', 'Bet', 'Odds', 'Status', 'Profit']
+        cols = [c for c in cols if c in display_df.columns]
+        st.write(display_df[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "history.csv", "text/csv")
+    else: st.info("No history found.")
 
 def render_about():
-    st.markdown("# Betting Co-Pilot Pro")
-    st.success("Your original dashboard — now 100% working")
+    st.markdown("# 📖 About"); st.info("Betting Co-Pilot v66.0 (Strict Parlay Edition)")
