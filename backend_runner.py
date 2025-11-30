@@ -1,5 +1,7 @@
 # backend_runner.py
 # The Execution Script
+# FIX: Removed non-existent 'train_soccer_brain' function call.
+# FIX: Added specific exception handling for Discord connection errors.
 
 import pandas as pd
 import betting_engine
@@ -7,9 +9,10 @@ import config
 from datetime import datetime
 import os
 import requests
+from requests.exceptions import RequestException # Import specific exception
 
 def send_discord_alert(df):
-    WEBHOOK_URL = config.API_CONFIG["DISCORD_WEBHOOK"]
+    WEBHOOK_URL = config.API_CONFIG.get("DISCORD_WEBHOOK", "PASTE_YOUR_WEBHOOK_URL_HERE")
     if "PASTE_YOUR" in WEBHOOK_URL: return
     if df.empty: msg = "🤖 **Betting Co-Pilot:** No value bets found today."
     else:
@@ -18,20 +21,25 @@ def send_discord_alert(df):
         for i, row in top_bets.iterrows():
             sport_icon = "⚽" if row['Sport'] == "Soccer" else "🏈" if row['Sport'] == "NFL" else "🏀"
             msg += f"{sport_icon} **{row['Match']}**\n   👉 {row['Bet']} @ {row['Odds']:.2f}\n   📈 Edge: {row['Edge']:.2%} | 💰 Stake: {row['Stake']:.2%}\n\n"
-    try: requests.post(WEBHOOK_URL, json={"content": msg})
-    except: pass
+    try: 
+        requests.post(WEBHOOK_URL, json={"content": msg})
+    except RequestException as e: # Catch specific Request errors
+        print(f"Error sending Discord alert: {e}") 
+        pass
 
 def run_backend_analysis():
     print("--- Starting Daily Global Backend Analysis (Modular) ---")
     
-    # 1. Settle Bets (and update RL weights)
+    # 1. Settle Bets 
     betting_engine.settle_bets()
     
-    # 2. Train Brains (Now uses RL weights)
-    soccer_brain, soccer_hist = betting_engine.train_soccer_brain()
+    # 2. Train Brains
+    # DELETED: soccer_brain, soccer_hist = betting_engine.train_soccer_brain() 
+    # The training for soccer is now handled internally by run_global_soccer_module()
     
     # 3. Run Modules
-    soccer_bets = betting_engine.run_soccer_module(soccer_brain, soccer_hist)
+    # The 'run_global_soccer_module' function handles both training and execution.
+    soccer_bets = betting_engine.run_global_soccer_module() 
     nfl_bets = betting_engine.run_nfl_module()
     nba_bets = betting_engine.run_nba_module()
     mlb_bets = betting_engine.run_mlb_module()
@@ -65,6 +73,7 @@ def run_backend_analysis():
         send_discord_alert(all_bets)
     else:
         print("\nNo value bets found.")
+        # Ensure latest_bets.csv is created even if empty for the Streamlit app to load.
         pd.DataFrame(columns=['Date', 'Date_Generated', 'Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info', 'Result', 'Profit', 'Score']).to_csv('latest_bets.csv', index=False)
         send_discord_alert(pd.DataFrame())
 
