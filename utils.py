@@ -1,6 +1,6 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v62.0 - Added Performance Calculation Logic
+# v62.1 - FIX: Improved robustness of ROI calculation denominator (total_staked)
 
 import streamlit as st
 import pandas as pd
@@ -48,10 +48,21 @@ def get_performance_stats(history_df):
     wins = len(settled[settled['Result'] == 'Win'])
     total = len(settled)
     profit = settled['Profit'].sum()
-    total_staked = settled['Stake'].sum() if 'Stake' in settled.columns else total # Approx
     
+    # FIX: Robustly calculate total staked (denominator for ROI).
+    total_staked = 0.0
+    if 'Stake' in settled.columns:
+        # Use the actual sum of stakes
+        total_staked = settled['Stake'].sum()
+    
+    # If total staked is 0 (either missing or only 0-stake bets like arbitrage), 
+    # use the total number of bets as the denominator (assuming 1 unit risked per bet).
+    if total_staked <= 0: 
+        total_staked = total
+
     win_rate = wins / total
-    roi = profit / total_staked if total_staked > 0 else 0.0
+    # Since total_staked is now guaranteed to be > 0 if total > 0, we can simplify the ROI line.
+    roi = profit / total_staked 
     
     # Per Sport Stats
     sport_stats = {}
