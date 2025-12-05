@@ -1,19 +1,25 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v63.0 - FIXED: URL formatting, CSS imports, error handling
+# v68.0 - FIXED: Auto-settlement, clean results table, robust date handling
 
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime, timezone
-import os
+from datetime import datetime, timezone, timedelta
+import numpy as np
+import logging
+import config
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("BettingUtils")
 
 # --- CONFIGURATION (SECURE METHOD) ---
-# Get GitHub credentials from Streamlit Secrets or fallback to defaults
-GITHUB_USERNAME = st.secrets.get("github_username", "jd0913")
-GITHUB_REPO = st.secrets.get("github_repo", "betting-copilot-pro")
+# Get GitHub credentials from Streamlit Secrets or config
+GITHUB_USERNAME = st.secrets.get("github_username", config.GITHUB_USERNAME if hasattr(config, 'GITHUB_USERNAME') else "jd0913")
+GITHUB_REPO = st.secrets.get("github_repo", config.GITHUB_REPO if hasattr(config, 'GITHUB_REPO') else "betting-copilot-pro")
 
-# FIX: Removed extra spaces in URLs that were breaking data loading
+# Fixed URL formatting (removed extra spaces)
 LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
 HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/betting_history.csv"
 
@@ -21,19 +27,21 @@ HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO
 def load_data(url):
     """Safely load data from GitHub with proper error handling"""
     try:
+        logger.info(f"Loading data from: {url}")
         response = requests.get(url, timeout=10)
-        response.raise_for_status()  # Raise exception for HTTP errors
+        response.raise_for_status()
         
-        # Check if content is actually CSV data
-        if 'text/plain' not in response.headers.get('Content-Type', '') and 'text/csv' not in response.headers.get('Content-Type', ''):
-            st.warning(f"Unexpected content type: {response.headers.get('Content-Type')}")
+        # Check content type
+        content_type = response.headers.get('Content-Type', '')
+        if 'csv' not in content_type and 'text/plain' not in content_type:
+            logger.warning(f"Unexpected content type: {content_type}")
             return "FILE_NOT_FOUND"
-            
+        
         # Read CSV with proper error handling
         df = pd.read_csv(url)
         
         if df.empty:
-            st.info("No bets found - data file is empty")
+            logger.info("Data file is empty")
             return "NO_BETS_FOUND"
         
         # Numeric conversion with error handling
@@ -44,37 +52,80 @@ def load_data(url):
         
         # Date Formatting with UTC handling
         if 'Date' in df.columns:
-            # Handle different date formats
-            df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce', utc=True)
-            # Filter out NaT values
+            # Try to parse date with flexible formats
+            try:
+                df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce', utc=True)
+            except:
+                # Fallback for different date formats
+                df['Date_Obj'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce', utc=True)
+            
+            # Filter out NaT values and format dates
             df = df[df['Date_Obj'].notna()]
-            # Format dates in local timezone
             df['Formatted_Date'] = df['Date_Obj'].dt.strftime('%a, %b %d • %I:%M %p')
+            df['Match_Day'] = df['Date_Obj'].dt.date
         else:
             df['Formatted_Date'] = 'Time TBD'
-            
+            df['Date_Obj'] = pd.NaT
+            df['Match_Day'] = None
+        
         return df
         
     except requests.exceptions.RequestException as e:
-        st.error(f"Network error loading data: {str(e)}")
+        logger.error(f"Network error loading {url}: {str(e)}")
         return "FILE_NOT_FOUND"
     except pd.errors.EmptyDataError:
-        st.warning("Data file is empty")
+        logger.warning("Data file is empty")
         return "NO_BETS_FOUND"
     except pd.errors.ParserError as e:
-        st.error(f"CSV parsing error: {str(e)}")
+        logger.error(f"CSV parsing error: {str(e)}")
         return "FILE_NOT_FOUND"
     except Exception as e:
-        st.exception(f"Unexpected error loading data: {str(e)}")
+        logger.exception(f"Unexpected error loading {url}: {str(e)}")
         return "FILE_NOT_FOUND"
+
+def auto_settle_past_bets(history_df):
+    """Automatically settle bets for matches that have already occurred"""
+    if not isinstance(history_df, pd.DataFrame) or history_df.empty:
+        return history_df
+    
+    current_time = datetime.now(timezone.utc)
+    settled_count = 0
+    
+    # Only process rows that are still pending
+    pending_mask = history_df['Result'] == 'Pending'
+    pending_df = history_df[pending_mask]
+    
+    for idx, row in pending_df.iterrows():
+        try:
+            # Skip if no date information
+            if 'Date_Obj' not in history_df.columns or pd.isna(row['Date_Obj']):
+                continue
+                
+            match_time = pd.to_datetime(row['Date_Obj'], utc=True)
+            
+            # Settle matches that occurred more than 2 hours ago
+            if match_time < current_time - timedelta(hours=2):
+                # Default to loss for auto-settled bets (conservative approach)
+                history_df.at[idx, 'Result'] = 'Auto-Settled'
+                history_df.at[idx, 'Profit'] = -row['Stake']
+                settled_count += 1
+                logger.info(f"Auto-settled bet: {row.get('Match', 'Unknown')} on {match_time}")
+        except Exception as e:
+            logger.warning(f"Error settling bet at index {idx}: {str(e)}")
+            continue
+    
+    if settled_count > 0:
+        logger.info(f"Auto-settled {settled_count} past bets")
+    
+    return history_df
 
 def get_performance_stats(history_df):
     """Calculates live performance metrics from history with safety checks"""
-    if not isinstance(history_df, pd.DataFrame):
+    if not isinstance(history_df, pd.DataFrame) or history_df.empty:
         return {"win_rate": 0.0, "roi": 0.0, "total_bets": 0, "sport_stats": {}}
     
     # Filter only settled bets with valid results
-    settled_mask = history_df['Result'].isin(['Win', 'Loss', 'Push']) if 'Result' in history_df.columns else pd.Series(False, index=history_df.index)
+    settled_mask = history_df['Result'].isin(['Win', 'Loss', 'Push', 'Auto-Settled'])
     settled = history_df[settled_mask]
     
     if settled.empty:
@@ -82,7 +133,7 @@ def get_performance_stats(history_df):
     
     # Calculate win rate (excluding pushes)
     win_mask = settled['Result'] == 'Win'
-    loss_mask = settled['Result'] == 'Loss'
+    loss_mask = settled['Result'].isin(['Loss', 'Auto-Settled'])
     wins = win_mask.sum()
     losses = loss_mask.sum()
     total_decided = wins + losses
@@ -104,7 +155,7 @@ def get_performance_stats(history_df):
         for sport in settled['Sport'].unique():
             s_df = settled[settled['Sport'] == sport]
             s_wins = (s_df['Result'] == 'Win').sum()
-            s_losses = (s_df['Result'] == 'Loss').sum()
+            s_losses = (s_df['Result'].isin(['Loss', 'Auto-Settled'])).sum()
             s_total = s_wins + s_losses
             
             if s_total > 0:
@@ -119,9 +170,8 @@ def get_performance_stats(history_df):
         "sport_stats": sport_stats
     }
 
-def inject_custom_css(font_choice="Clean (Inter)"):
-    """Inject custom CSS with fixed font import and improved styling"""
-    # FIX: Removed space in font URL that was breaking CSS
+def inject_custom_css():
+    """Inject modern CSS with proper font imports and styling"""
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
@@ -136,6 +186,28 @@ def inject_custom_css(font_choice="Clean (Inter)"):
         h1, h2, h3, h4, h5, h6 {
             color: white;
             font-weight: 700;
+        }
+        
+        /* Dataframe styling */
+        .dataframe {
+            background-color: #1a1c23 !important;
+            border-radius: 12px !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: #e0e0e0 !important;
+        }
+        .dataframe th {
+            background-color: #1e2130 !important;
+            color: #8b92a5 !important;
+            font-weight: 600 !important;
+            text-align: center !important;
+        }
+        .dataframe td {
+            text-align: center !important;
+            background-color: #16181d !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+        }
+        .dataframe tr:hover {
+            background-color: rgba(0, 201, 255, 0.05) !important;
         }
         
         /* Card styling */
@@ -197,36 +269,38 @@ def inject_custom_css(font_choice="Clean (Inter)"):
             border: 1px solid #444;
         }
         
-        /* Result badges */
+        /* Result badges - CLEAN TEXT ONLY */
         .res-win {
-            background: rgba(27, 94, 32, 0.2);
             color: #69f0ae;
-            border: 1px solid rgba(105, 240, 174, 0.3);
-            padding: 3px 10px;
-            border-radius: 8px;
             font-weight: 600;
+            background: rgba(27, 94, 32, 0.1);
+            padding: 2px 8px;
+            border-radius: 6px;
+            display: inline-block;
         }
         .res-loss {
-            background: rgba(183, 28, 28, 0.2);
             color: #ff8a80;
-            border: 1px solid rgba(255, 138, 128, 0.3);
-            padding: 3px 10px;
-            border-radius: 8px;
             font-weight: 600;
+            background: rgba(183, 28, 28, 0.1);
+            padding: 2px 8px;
+            border-radius: 6px;
+            display: inline-block;
         }
         .res-push {
-            background: rgba(84, 84, 84, 0.2);
             color: #bdbdbd;
-            border: 1px solid rgba(189, 189, 189, 0.3);
-            padding: 3px 10px;
-            border-radius: 8px;
             font-weight: 600;
+            background: rgba(84, 84, 84, 0.1);
+            padding: 2px 8px;
+            border-radius: 6px;
+            display: inline-block;
         }
         .res-pending {
             color: #ffcc80;
             font-weight: 600;
-            font-style: normal;
-            padding: 3px 0;
+            background: rgba(255, 204, 0, 0.1);
+            padding: 2px 8px;
+            border-radius: 6px;
+            display: inline-block;
         }
         
         /* Gradient text for headers */
@@ -251,6 +325,42 @@ def inject_custom_css(font_choice="Clean (Inter)"):
             background-clip: text;
         }
         
+        /* KPI cards */
+        .kpi-card {
+            background: linear-gradient(145deg, #1a1c23, #16181d);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            transition: all 0.2s ease;
+        }
+        .kpi-card:hover {
+            border-color: #00C9FF;
+            transform: translateY(-2px);
+        }
+        .kpi-label {
+            color: #8b92a5;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .kpi-value {
+            font-size: 1.8em;
+            font-weight: 800;
+            color: white;
+            margin: 5px 0;
+        }
+        .kpi-change {
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .kpi-change.positive {
+            color: #69f0ae;
+        }
+        .kpi-change.negative {
+            color: #ff8a80;
+        }
+        
         /* Button styling */
         .stButton > button {
             background: linear-gradient(90deg, #1a1c23, #1e2230);
@@ -272,6 +382,55 @@ def inject_custom_css(font_choice="Clean (Inter)"):
             background: linear-gradient(180deg, #0f1117, #131621);
             border-right: 1px solid rgba(255, 255, 255, 0.05);
         }
+        
+        /* Expanders */
+        .streamlit-expanderHeader {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+            font-weight: 600;
+        }
+        
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 24px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            height: 35px;
+            white-space: pre-wrap;
+            background-color: #1e2130;
+            border-radius: 8px 8px 0 0;
+            gap: 1px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #00C9FF;
+            color: #000;
+        }
+        
+        /* Form elements */
+        .stTextInput > div > div > input,
+        .stNumberInput > div > div > input {
+            background-color: #16181d;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+        
+        /* Selectbox */
+        .stSelectbox > div > div > div {
+            background-color: #16181d;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+        
+        /* Expander content */
+        .streamlit-expanderContent {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 0 0 8px 8px;
+            padding: 15px;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -291,7 +450,7 @@ def get_team_emoji(sport):
     return emoji_map.get(sport, "🏅")
 
 def get_risk_badge(row):
-    """Generate risk badge HTML with proper edge/confidence handling"""
+    """Generate clean risk badge text with proper edge/confidence handling"""
     try:
         edge = float(row.get('Edge', 0))
         odds = float(row.get('Odds', 0))
@@ -299,37 +458,132 @@ def get_risk_badge(row):
         bet_type = row.get('Bet_Type', row.get('Bet Type', ''))
         
         if bet_type == 'ARBITRAGE':
-            return '<span class="badge badge-arb">💎 ARB</span>'
+            return '💎 ARB'
         if odds > 3.5 and edge > 0.15:
-            return '<span class="badge badge-high">⚡ HIGH</span>'
+            return '⚡ HIGH'
         if conf > 0.60 and edge > 0.07:
-            return '<span class="badge badge-safe">⭐ VALUE</span>'
+            return '⭐ VALUE'
         if edge > 0.02:
-            return '<span class="badge badge-std">EDGE</span>'
-        return '<span class="badge badge-std">STANDARD</span>'
+            return 'EDGE'
+        return 'STANDARD'
     except (ValueError, TypeError):
-        return '<span class="badge badge-std">N/A</span>'
+        return 'N/A'
 
-def format_result_badge(result):
-    """Format result badge with proper HTML escaping"""
+def format_result_text(result):
+    """Format result as clean text (no HTML)"""
     if not result or pd.isna(result):
-        return '<span class="res-pending">❓ UNKNOWN</span>'
+        return "⏳ PENDING"
     
-    result = str(result).strip()
-    if result.lower() in ['win', 'won']:
-        return '<span class="res-win">✓ WIN</span>'
-    elif result.lower() in ['loss', 'lost']:
-        return '<span class="res-loss">✗ LOSS</span>'
-    elif result.lower() in ['push', 'tie']:
-        return '<span class="res-push">→ PUSH</span>'
-    elif result.lower() in ['pending', 'open', '']:
-        return '<span class="res-pending">⏳ PENDING</span>'
+    result = str(result).strip().lower()
+    if result in ['win', 'won']:
+        return "✅ WIN"
+    elif result in ['loss', 'lost', 'auto-settled']:
+        return "❌ LOSS"
+    elif result in ['push', 'tie']:
+        return "⚖️ PUSH"
+    elif result in ['pending', 'open', '']:
+        return "⏳ PENDING"
     else:
-        return f'<span class="res-pending">{result.upper()}</span>'
+        return result.upper()
 
 def format_currency(value):
     """Format numbers as currency with proper signs"""
-    if pd.isna(value) or value == 0:
+    if pd.isna(value) or abs(value) < 0.01:
         return "$0.00"
     sign = "+" if value > 0 else "-"
     return f"{sign}${abs(value):,.2f}"
+
+def get_bet_status_color(result):
+    """Return color codes for different bet statuses"""
+    result = str(result).lower()
+    if 'win' in result:
+        return "#69f0ae", "#00c853"  # Green colors
+    elif 'loss' in result or 'auto-settled' in result:
+        return "#ff8a80", "#ff1744"  # Red colors
+    elif 'push' in result:
+        return "#bdbdbd", "#757575"  # Gray colors
+    else:
+        return "#ffcc80", "#ffa000"  # Amber colors for pending
+
+def calculate_portfolio_metrics(bet_slip, bankroll):
+    """Calculate portfolio metrics for the current bet slip"""
+    if not bet_slip:
+        return {
+            'total_stake': 0.0,
+            'potential_return': 0.0,
+            'expected_value': 0.0,
+            'risk_level': 'LOW'
+        }
+    
+    total_stake = 0.0
+    potential_return = 0.0
+    expected_value = 0.0
+    
+    for bet in bet_slip:
+        stake = bet.get('User_Stake', bet.get('Stake', 0.0) * bankroll)
+        odds = bet.get('Odds', 1.0)
+        edge = bet.get('Edge', 0.0)
+        
+        total_stake += stake
+        potential_return += stake * odds
+        expected_value += stake * (1 + edge)  # Expected profit
+    
+    # Determine risk level
+    risk_percentage = total_stake / bankroll if bankroll > 0 else 0
+    if risk_percentage > 0.1:
+        risk_level = 'HIGH'
+    elif risk_percentage > 0.05:
+        risk_level = 'MEDIUM'
+    else:
+        risk_level = 'LOW'
+    
+    return {
+        'total_stake': total_stake,
+        'potential_return': potential_return,
+        'expected_value': expected_value,
+        'risk_level': risk_level,
+        'risk_percentage': risk_percentage
+    }
+
+def get_sport_performance(history_df, sport):
+    """Get performance stats for a specific sport"""
+    if not isinstance(history_df, pd.DataFrame) or history_df.empty:
+        return None
+    
+    sport_df = history_df[history_df['Sport'] == sport]
+    if sport_df.empty:
+        return None
+    
+    settled = sport_df[sport_df['Result'].isin(['Win', 'Loss', 'Push', 'Auto-Settled'])]
+    if settled.empty:
+        return None
+    
+    wins = len(settled[settled['Result'] == 'Win'])
+    total = len(settled)
+    win_rate = wins / total if total > 0 else 0.0
+    
+    if 'Profit' in settled.columns and 'Stake' in settled.columns:
+        profit = settled['Profit'].sum()
+        staked = settled['Stake'].sum()
+        roi = profit / staked if staked > 0 else 0.0
+    else:
+        profit = 0.0
+        roi = 0.0
+    
+    return {
+        'win_rate': win_rate,
+        'roi': roi,
+        'total_bets': total,
+        'profit': profit
+    }
+
+def format_edge_text(edge):
+    """Format edge percentage with proper coloring and text"""
+    if edge > 0.1:
+        return f"🔥 {edge:.1%}"
+    elif edge > 0.05:
+        return f"🎯 {edge:.1%}"
+    elif edge > 0.02:
+        return f"✅ {edge:.1%}"
+    else:
+        return f"{edge:.1%}"
