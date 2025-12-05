@@ -1,6 +1,6 @@
 # app.py
-# Betting Co-Pilot Pro - Streamlit Cloud Ready
-# Simple, secure version that uses Streamlit Secrets
+# Betting Co-Pilot Pro - v67.1 (Streamlit Cloud Fix)
+# FIX: Corrected parameter name from kelly_fraction to kelly_multiplier
 
 import streamlit as st
 import utils
@@ -88,7 +88,7 @@ with st.sidebar:
 if st.session_state.current_page == "Command Center":
     views.render_dashboard(
         bankroll=st.session_state.bankroll,
-        kelly_fraction=0.25  # Quarter-Kelly standard
+        kelly_multiplier=0.25  # CORRECTED PARAMETER NAME
     )
 elif st.session_state.current_page == "Market Map":
     views.render_market_map()
