@@ -1,27 +1,10 @@
 # app.py
-# Betting Co-Pilot Pro - v59.0 (Refactored)
-# Key Fixes: 
-#   - Persistent bankroll & navigation state
-#   - Secure secrets management
-#   - Professional risk controls
-#   - Enhanced UX patterns
+# Betting Co-Pilot Pro - Streamlit Cloud Ready
+# Simple, secure version that uses Streamlit Secrets
 
 import streamlit as st
 import utils
-from config import BETTING_CONFIG  # Critical: Centralized configuration
 import views
-
-# ==============================================================================
-# SESSION STATE INITIALIZATION (MUST BE FIRST)
-# ==============================================================================
-if 'bankroll' not in st.session_state:
-    st.session_state.bankroll = 1000.0  # Default bankroll
-
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "Command Center"  # Default page
-
-if 'bet_slip' not in st.session_state:
-    st.session_state.bet_slip = []
 
 # ==============================================================================
 # PAGE CONFIGURATION
@@ -34,15 +17,16 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# SECURITY & SECRETS SETUP
+# SESSION STATE INITIALIZATION
 # ==============================================================================
-# NEVER hardcode credentials - use Streamlit Secrets
-try:
-    GITHUB_USERNAME = st.secrets["github"]["username"]
-    GITHUB_REPO = st.secrets["github"]["repo"]
-except KeyError:
-    st.error("🚨 Missing GitHub credentials in `.streamlit/secrets.toml`")
-    st.stop()
+if 'bankroll' not in st.session_state:
+    st.session_state.bankroll = 1000.0  # Default starting bankroll
+
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "Command Center"  # Default page
+
+if 'bet_slip' not in st.session_state:
+    st.session_state.bet_slip = []
 
 # ==============================================================================
 # SIDEBAR NAVIGATION & CONTROLS
@@ -51,91 +35,73 @@ with st.sidebar:
     utils.inject_custom_css()
     st.title("🚀 Betting Co-Pilot Pro")
     
-    # ===== BANKROLL MANAGEMENT =====
-    st.header("💰 Bankroll Management")
+    # Bankroll Management
+    st.header("💰 Bankroll")
     st.session_state.bankroll = st.number_input(
         "Current Bankroll ($)", 
         value=float(st.session_state.bankroll),
         min_value=0.0,
-        step=0.01,
-        format="%.2f",
-        help="Your total betting capital. Adjust as you win/lose."
+        step=10.0,
+        format="%.2f"
     )
     
-    # Visual risk indicators
     if st.session_state.bankroll < 100:
-        st.warning("⚠️ Low bankroll - risk controls active", icon="🚨")
-    elif st.session_state.bankroll > 50000:
-        st.success("🏦 High roller mode", icon="💎")
+        st.warning("⚠️ Low bankroll", icon="🚨")
+    elif st.session_state.bankroll > 10000:
+        st.success("🏦 High roller", icon="💎")
     
-    # ===== PAGE NAVIGATION =====
+    # Navigation
     st.markdown("---")
     st.subheader("🧭 Navigation")
     
-    # Professional navigation pattern (persists state)
-    nav_pages = ["Command Center", "Market Map", "Bet Tracker", "History", "About"]
-    for page in nav_pages:
+    pages = ["Command Center", "Market Map", "Bet Tracker", "History", "About"]
+    for page in pages:
         if st.button(
-            f"{'✅' if st.session_state.current_page == page else '➡️'} {page}", 
+            f"{'✅' if st.session_state.current_page == page else '➡️'} {page}",
             use_container_width=True,
             type="primary" if st.session_state.current_page == page else "secondary"
         ):
             st.session_state.current_page = page
             st.rerun()
     
-    # ===== REFRESH CONTROLS =====
+    # API Status Check
     st.markdown("---")
-    st.subheader("🔄 Data Controls")
+    st.subheader("🔧 System Status")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("⟳ Refresh Odds", use_container_width=True):
-            utils.load_data.clear()
-            st.toast("✅ Odds refreshed!", icon="⚡")
-    with col2:
-        if st.button("🗑️ Clear Bets", use_container_width=True):
-            st.session_state.bet_slip = []
-            st.toast("✅ Bet slip cleared", icon="🧹")
+    # Get API keys from Streamlit Secrets
+    odds_key = st.secrets.get("odds_api_key", "not_set")
+    discord_webhook = st.secrets.get("discord_webhook", "not_set")
     
-    # ===== FOOTER =====
-    st.markdown("---")
-    st.caption(f"📊 Data Source: `{GITHUB_USERNAME}/{GITHUB_REPO}`")
-    st.caption(f"⚙️ Kelly Fraction: {BETTING_CONFIG['kelly_fraction']:.0%}")
+    if odds_key != "not_set" and "dummy" not in odds_key:
+        st.success("✅ Odds API: Connected")
+    else:
+        st.error("❌ Odds API: Not configured")
     
-    # Responsible gambling notice (LEGAL REQUIREMENT)
-    st.markdown(
-        "<div style='background-color:#1e1e1e;padding:10px;border-radius:5px;margin-top:15px'>"
-        "<p style='color:#ff4b4b;font-weight:bold;text-align:center'>"
-        "⚠️ GAMBLING INVOLVES SUBSTANTIAL RISK<br>"
-        "ONLY BET WHAT YOU CAN AFFORD TO LOSE"
-        "</p></div>",
-        unsafe_allow_html=True
-    )
+    if discord_webhook != "not_set" and "dummy" not in discord_webhook:
+        st.success("✅ Discord: Connected")
+    else:
+        st.warning("⚠️ Discord: Not configured")
 
 # ==============================================================================
-# MAIN CONTENT RENDERING
+# MAIN CONTENT
 # ==============================================================================
-# Professional routing pattern
 if st.session_state.current_page == "Command Center":
     views.render_dashboard(
         bankroll=st.session_state.bankroll,
-        kelly_fraction=BETTING_CONFIG["kelly_fraction"]
+        kelly_fraction=0.25  # Quarter-Kelly standard
     )
 elif st.session_state.current_page == "Market Map":
     views.render_market_map()
 elif st.session_state.current_page == "Bet Tracker":
-    views.render_bet_tracker(
-        bankroll=st.session_state.bankroll,
-        min_edge=BETTING_CONFIG["min_edge"]
-    )
+    views.render_bet_tracker(st.session_state.bankroll)
 elif st.session_state.current_page == "History":
     views.render_history()
 elif st.session_state.current_page == "About":
     views.render_about()
 
 # ==============================================================================
-# GLOBAL TOAST NOTIFICATIONS
+# FOOTER
 # ==============================================================================
-if "notification" in st.session_state:
-    st.toast(st.session_state.notification, icon="✅")
-    del st.session_state.notification
+st.markdown("---")
+st.caption("Betting Co-Pilot Pro • Running on Streamlit Cloud")
+st.caption("⚠️ **GAMBLING INVOLVES RISK. ONLY BET WHAT YOU CAN AFFORD TO LOSE.**")
