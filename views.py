@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 from itertools import combinations
 from datetime import datetime, timedelta, timezone
 import utils
+import statistics
 
 def render_dashboard(bankroll, kelly_multiplier):
     st.markdown('<p class="gradient-text">🚀 Live Command Center</p>', unsafe_allow_html=True)
@@ -383,7 +384,7 @@ def render_history():
         with col3:
             st.metric("🎫 Total Bets", stats["total_bets"])
         with col4:
-            st.metric("⚡ Avg Edge", f"{statistics.mean(history_df['Edge']) if 'Edge' in history_df.columns else 0:.1%}" if not history_df.empty else "0.0%")
+            st.metric("⚡ Avg Edge", f"{history_df['Edge'].mean():.1%}" if 'Edge' in history_df.columns and not history_df.empty else "0.0%")
     
     # Sport Performance Chart
     if sport_stats:
@@ -428,7 +429,7 @@ def render_history():
     display_df = history_df.copy()
     display_df = display_df.sort_values('Date_Obj', ascending=False)
     
-    # Format result column properly - FIX: This is where the error was
+    # Format result column properly - FIXED: Using correct column reference
     display_df['Status'] = display_df['Result'].apply(lambda x: 
         "✅ WIN" if x == 'Win' else 
         "❌ LOSS" if x in ['Loss', 'Auto-Settled'] else 
