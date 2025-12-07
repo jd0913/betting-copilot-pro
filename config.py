@@ -1,80 +1,198 @@
 # config.py
-# Betting Co-Pilot Pro Configuration - Streamlit Cloud Ready
-# Secure version that uses Streamlit Secrets and environment variables
+# Betting Co-Pilot Pro Configuration - v70.0 (Score Settlement Edition)
+# CRITICAL FIX: Added SCORES_URL and settlement parameters
 
 import streamlit as st
 import os
 
-def get_api_key(key_name: str, default: str = "") -> str:
+def get_secret(key: str, default: str = "") -> str:
     """
-    Securely get API keys from multiple sources in priority order:
-    1. Streamlit Secrets (when running on Streamlit Cloud)
-    2. Environment Variables (for local/backend runs)
-    3. Default value (if nothing else is available)
+    Securely retrieve secrets from environment/Streamlit secrets
     """
-    # Try Streamlit Secrets first (for web app)
-    try:
-        if hasattr(st, 'secrets') and key_name in st.secrets:
-            return str(st.secrets[key_name])
-    except Exception:
-        pass
-    
-    # Try environment variables (for backend scripts)
-    env_val = os.getenv(key_name.upper())
+    # 1. Environment variables (highest priority)
+    env_val = os.getenv(key)
     if env_val:
-        return env_val
+        return env_val.strip()
     
-    # Fallback to default
-    return default
+    # 2. Streamlit secrets (when deployed on Streamlit Cloud)
+    if "streamlit" in sys.modules:
+        try:
+            st_val = st.secrets.get(key)
+            if st_val:
+                return str(st_val).strip()
+        except Exception as e:
+            pass
+    
+    # 3. Default value (with warning)
+    if default and "PASTE_YOUR" not in default:
+        return default
+    
+    return "PASTE_YOUR_" + key.upper() + "_HERE"
 
 # ==============================================================================
-# 🔐 API CONFIGURATION (Secure loading)
+# 🔐 API CONFIGURATION
 # ==============================================================================
 API_CONFIG = {
-    "THE_ODDS_API_KEY": get_api_key("odds_api_key", "dummy_key_for_github"),
-    "DISCORD_WEBHOOK": get_api_key("discord_webhook", "dummy_webhook_for_github")
+    "THE_ODDS_API_KEY": get_secret(
+        "odds_api_key", 
+        default="PASTE_YOUR_ODDS_API_KEY_HERE"
+    ),
+    "DISCORD_WEBHOOK": get_secret(
+        "discord_webhook", 
+        default="PASTE_YOUR_DISCORD_WEBHOOK_HERE"
+    )
 }
 
 # ==============================================================================
-# 🌍 LEAGUE SETTINGS (Fixed codes)
+# 🌍 GITHUB REPOSITORY CONFIGURATION
 # ==============================================================================
-SOCCER_LEAGUES = {
-    'soccer_epl': 'E0',           # English Premier League
-    'soccer_spain_la_liga': 'SP1', # Spanish La Liga
-    'soccer_germany_bundesliga': 'D1', # German Bundesliga
-    'soccer_italy_serie_a': 'I1',  # Italian Serie A
-    'soccer_france_ligue_one': 'F1', # French Ligue 1
-    'soccer_uefa_champs_league': 'CL'  # UEFA Champions League (FIXED from UCL to CL)
+GITHUB_CONFIG = {
+    "USERNAME": get_secret(
+        "github_username", 
+        default="jd0913"
+    ),
+    "REPO": get_secret(
+        "github_repo", 
+        default="betting-copilot-pro"
+    ),
+    "BRANCH": "main"
 }
 
 # ==============================================================================
-# 🏈 NFL TEAM MAPPING (Fixed abbreviations)
+# 🔗 DATA SOURCE URLs (Dynamically generated from GitHub config)
 # ==============================================================================
+BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_CONFIG['USERNAME']}/{GITHUB_CONFIG['REPO']}/{GITHUB_CONFIG['BRANCH']}"
+URLS = {
+    "LATEST_BETS": f"{BASE_URL}/latest_bets.csv",
+    "BETTING_HISTORY": f"{BASE_URL}/betting_history.csv",
+    "MATCH_SCORES": f"{BASE_URL}/match_scores.csv",  # NEW: For settlement logic
+    "SCORES_ARCHIVE": f"{BASE_URL}/scores_archive/"
+}
+
+# ==============================================================================
+# 🏆 SPORTS CONFIGURATION
+# ==============================================================================
+SPORTS = {
+    "soccer_epl": {
+        "name": "English Premier League",
+        "code": "E0",
+        "teams": [
+            "Arsenal", "Aston Villa", "Bournemouth", "Brentford", "Brighton and Hove Albion",
+            "Burnley", "Chelsea", "Crystal Palace", "Everton", "Fulham",
+            "Leeds United", "Leicester City", "Liverpool", "Manchester City", "Manchester United",
+            "Newcastle United", "Nottingham Forest", "Sheffield United", "Tottenham Hotspur", "West Ham United",
+            "Wolverhampton Wanderers"
+        ]
+    },
+    "soccer_spain_la_liga": {
+        "name": "Spanish La Liga",
+        "code": "SP1",
+        "teams": [
+            "Alaves", "Athletic Bilbao", "Atletico Madrid", "Barcelona", "Betis",
+            "Celta Vigo", "Espanyol", "Getafe", "Girona", "Granada",
+            "Las Palmas", "Mallorca", "Osasuna", "Rayo Vallecano", "Real Madrid",
+            "Real Sociedad", "Sevilla", "Valencia", "Villarreal"
+        ]
+    },
+    "soccer_germany_bundesliga": {
+        "name": "German Bundesliga",
+        "code": "D1",
+        "teams": [
+            "Augsburg", "Bayer Leverkusen", "Bayern Munich", "Borussia Dortmund", "Borussia Monchengladbach",
+            "Eintracht Frankfurt", "FC Koln", "Freiburg", "Hamburger SV", "Hoffenheim",
+            "Mainz 05", "RB Leipzig", "Schalke 04", "Stuttgart", "Union Berlin",
+            "VfL Bochum", "VfL Wolfsburg"
+        ]
+    },
+    "soccer_italy_serie_a": {
+        "name": "Italian Serie A",
+        "code": "I1",
+        "teams": [
+            "AC Milan", "Atalanta", "Bologna", "Cagliari", "Empoli",
+            "Fiorentina", "Genoa", "Hellas Verona", "Inter Milan", "Juventus",
+            "Lazio", "Lecce", "Napoli", "Roma", "Salernitana",
+            "Sampdoria", "Sassuolo", "Torino", "Udinese"
+        ]
+    },
+    "soccer_france_ligue_one": {
+        "name": "French Ligue 1",
+        "code": "F1",
+        "teams": [
+            "Ajaccio", "Angers", "Auxerre", "Brest", "Clermont Foot",
+            "Lens", "Lille", "Lorient", "Lyon", "Marseille",
+            "Metz", "Monaco", "Montpellier", "Nantes", "Nice",
+            "Paris Saint Germain", "Reims", "Rennes", "Strasbourg", "Toulouse"
+        ]
+    },
+    "soccer_uefa_champs_league": {
+        "name": "UEFA Champions League",
+        "code": "CL",
+        "teams": []  # Dynamic based on season
+    }
+}
+
 NFL_TEAMS = {
     "Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL", "Baltimore Ravens": "BAL", "Buffalo Bills": "BUF",
     "Carolina Panthers": "CAR", "Chicago Bears": "CHI", "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE",
     "Dallas Cowboys": "DAL", "Denver Broncos": "DEN", "Detroit Lions": "DET", "Green Bay Packers": "GB",
     "Houston Texans": "HOU", "Indianapolis Colts": "IND", "Jacksonville Jaguars": "JAX", "Kansas City Chiefs": "KC",
-    "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC", "Los Angeles Rams": "LAR", "Miami Dolphins": "MIA",  # FIXED: LA → LAR
+    "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC", "Los Angeles Rams": "LAR", "Miami Dolphins": "MIA",
     "Minnesota Vikings": "MIN", "New England Patriots": "NE", "New Orleans Saints": "NO", "New York Giants": "NYG",
     "New York Jets": "NYJ", "Philadelphia Eagles": "PHI", "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF",
     "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB", "Tennessee Titans": "TEN", "Washington Commanders": "WAS"
 }
 
 # ==============================================================================
-# 💰 BETTING PARAMETERS (Professional defaults)
+# ⚙️ BETTING PARAMETERS (Professional Settings)
 # ==============================================================================
 BETTING_CONFIG = {
-    "kelly_fraction": 0.25,    # Quarter-Kelly standard
+    "kelly_fraction": 0.25,    # Quarter-Kelly standard for risk management
     "min_edge": 0.02,          # Minimum edge (2%) to place bets
     "max_bet_size": 0.05,      # Max 5% of bankroll per bet
-    "currency": "USD"
+    "max_daily_bets": 10,      # Daily bet limit
+    "min_odds": 1.01,          # Minimum odds to consider
+    "settlement_grace_period": 4,  # Hours after match end before auto-settlement
+    "score_fallback": "N/A"    # Default score when not available
 }
+
+# ==============================================================================
+# 📁 SYSTEM PATHS
+# ==============================================================================
+SYSTEM_PATHS = {
+    "model_cache": "model_cache",
+    "data_archive": "data_archive",
+    "logs_dir": "logs",
+    "tmp_dir": "tmp"
+}
+
+# Create critical directories
+for path in SYSTEM_PATHS.values():
+    os.makedirs(path, exist_ok=True)
 
 # ==============================================================================
 # ✅ CONFIGURATION VALIDATION
 # ==============================================================================
-def is_config_valid() -> bool:
-    """Check if essential configuration is available"""
+def validate_config() -> bool:
+    """
+    Validate critical configuration before execution
+    Returns True if configuration is valid, False otherwise
+    """
+    valid = True
+    
+    # Critical API check
     odds_key = API_CONFIG["THE_ODDS_API_KEY"]
-    return odds_key and "dummy" not in odds_key and "PASTE_YOUR" not in odds_key
+    if "PASTE_YOUR" in odds_key:
+        st.error("🚨 THE_ODDS_API_KEY NOT CONFIGURED! Betting disabled.")
+        valid = False
+    
+    # GitHub configuration check
+    if "PASTE_YOUR" in GITHUB_CONFIG["USERNAME"] or "PASTE_YOUR" in GITHUB_CONFIG["REPO"]:
+        st.error("🚨 GITHUB CONFIGURATION INVALID! Data loading disabled.")
+        valid = False
+    
+    # Directory permissions check
+    for name, path in SYSTEM_PATHS.items():
+        if not os.access(path, os.W_OK):
+            st.warning(f"⚠️ Directory not writable: {path} ({name})")
+    
+    return valid
