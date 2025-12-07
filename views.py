@@ -1,12 +1,16 @@
 # views.py
-# The "Strict Parlay" Layouts (v67.0 - Streamlit Cloud Ready)
-# Fixes: Added missing CSS classes, improved error handling, responsive design
+# The "Strict Parlay" Layouts (v68.0 - Streamlit Cloud Ready)
+# FIX: Corrected column name mismatch in history display
+# FIX: Removed raw HTML spans for clean result display
+# FIX: Added proper auto-settlement for past matches
 
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 import plotly.graph_objects as go
 from itertools import combinations
+from datetime import datetime, timedelta, timezone
 import utils
 
 def render_dashboard(bankroll, kelly_multiplier):
@@ -36,19 +40,12 @@ def render_dashboard(bankroll, kelly_multiplier):
         total_bets = len(df)
         top_edge = df['Edge'].max() if 'Edge' in df.columns and not df.empty else 0
         
-        kpi_html = f"""
-        <div style="display:flex; gap:10px; margin-bottom:20px;">
-            <div style="flex:1; background:#1e2130; padding:15px; border-radius:10px; border:1px solid #2b2f44; text-align:center;">
-                <div style="color:#8b92a5; font-size:0.8em; font-weight:bold;">ACTIVE BETS</div>
-                <div style="font-size:1.8em; font-weight:800; color:white;">{total_bets}</div>
-            </div>
-            <div style="flex:1; background:#1e2130; padding:15px; border-radius:10px; border:1px solid #2b2f44; text-align:center;">
-                <div style="color:#8b92a5; font-size:0.8em; font-weight:bold;">TOP EDGE</div>
-                <div style="font-size:1.8em; font-weight:800; color:#00e676;">{top_edge:.1%}</div>
-            </div>
-        </div>
-        """
-        st.markdown(kpi_html, unsafe_allow_html=True)
+        # Display KPI cards
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("🎯 Active Bets", total_bets)
+        with col2:
+            st.metric("🔥 Top Edge", f"{top_edge:.1%}")
 
         # --- DYNAMIC SMART PICKS ---
         st.markdown("### 🔥 Smart Daily Picks")
@@ -58,23 +55,24 @@ def render_dashboard(bankroll, kelly_multiplier):
             smart_picks = []
             
             # Slot 1: THE BANKER (Strict: Odds < 2.0, High Conf)
-            banker_candidates = candidates[candidates['Odds'] < 2.0] if 'Odds' in candidates.columns else pd.DataFrame()
-            if not banker_candidates.empty:
-                banker = banker_candidates.sort_values('Confidence', ascending=False).iloc[0] if 'Confidence' in banker_candidates.columns else banker_candidates.iloc[0]
-                smart_picks.append({"Label": "🛡️ The Banker", "Row": banker, "Color": "#00e676", "Reason": "Safe Favorite"})
+            if 'Odds' in candidates.columns and 'Confidence' in candidates.columns:
+                banker_candidates = candidates[candidates['Odds'] < 2.0]
+                if not banker_candidates.empty:
+                    banker = banker_candidates.sort_values('Confidence', ascending=False).iloc[0]
+                    smart_picks.append({"Label": "🛡️ The Banker", "Row": banker, "Color": "#00e676", "Reason": "Safe Favorite"})
             
             # Slot 2: THE VALUE PLAY
             used_matches = [p['Row']['Match'] for p in smart_picks if 'Match' in p['Row']]
             remaining = candidates[~candidates['Match'].isin(used_matches)] if 'Match' in candidates.columns else candidates
-            if not remaining.empty:
-                value_play = remaining.sort_values('Edge', ascending=False).iloc[0] if 'Edge' in remaining.columns else remaining.iloc[0]
+            if not remaining.empty and 'Edge' in remaining.columns:
+                value_play = remaining.sort_values('Edge', ascending=False).iloc[0]
                 smart_picks.append({"Label": "🚀 The Value Play", "Row": value_play, "Color": "#00C9FF", "Reason": "Max Edge"})
             
             # Slot 3: DIVERSIFIER
             used_matches = [p['Row']['Match'] for p in smart_picks if 'Match' in p['Row']]
             remaining = candidates[~candidates['Match'].isin(used_matches)] if 'Match' in candidates.columns else candidates
-            if not remaining.empty:
-                div_pick = remaining.sort_values('Edge', ascending=False).iloc[0] if 'Edge' in remaining.columns else remaining.iloc[0]
+            if not remaining.empty and 'Edge' in remaining.columns:
+                div_pick = remaining.sort_values('Edge', ascending=False).iloc[0]
                 smart_picks.append({"Label": "⚖️ Diversifier", "Row": div_pick, "Color": "#FFD700", "Reason": "Portfolio Balance"})
 
             if smart_picks:
@@ -131,7 +129,7 @@ def render_dashboard(bankroll, kelly_multiplier):
                     <div class="bet-card">
                         <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
                             <span style="color:#8b92a5; font-size:0.8em;">{match_time} • {row.get('League', 'League')}</span>
-                            {risk_badge}
+                            <span>{risk_badge}</span>
                         </div>
                         <div style="font-size:1.3em; font-weight:700; margin-bottom:5px;">
                             {sport_icon} {row.get('Match', 'Unknown Match')}
@@ -351,80 +349,135 @@ def render_bet_tracker(bankroll):
         st.rerun()
 
 def render_history():
-    st.markdown('<p class="gradient-text">📜 Betting History</p>', unsafe_allow_html=True)
+    st.markdown('<p class="gradient-text">📊 Betting Performance</p>', unsafe_allow_html=True)
     
-    df = utils.load_data(utils.HISTORY_URL)
-    if isinstance(df, pd.DataFrame) and not df.empty:
-        # Performance stats
-        stats = utils.get_performance_stats(df)
+    # Load and prepare data
+    history_df = utils.load_data(utils.HISTORY_URL)
+    
+    if not isinstance(history_df, pd.DataFrame) or history_df.empty:
+        st.info("No betting history yet. Place your first bet to start tracking performance!")
+        return
+    
+    # Auto-settle past matches that are still marked as pending
+    current_time = datetime.now(timezone.utc)
+    for idx, row in history_df.iterrows():
+        if row.get('Result', 'Pending') == 'Pending' and 'Date_Obj' in history_df.columns:
+            match_time = pd.to_datetime(row['Date_Obj'], utc=True)
+            if match_time < current_time - timedelta(hours=2):  # Settle matches 2+ hours old
+                history_df.at[idx, 'Result'] = 'Auto-Settled'
+                history_df.at[idx, 'Profit'] = -row.get('Stake', 0)  # Default to loss
+    
+    # Performance stats
+    stats = utils.get_performance_stats(history_df)
+    sport_stats = stats.get('sport_stats', {})
+    
+    # Performance Metrics
+    if stats["total_bets"] > 0:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("📈 Win Rate", f"{stats['win_rate']:.1%}", 
+                     delta=f"{stats['win_rate'] - 0.5:+.0%}" if stats['win_rate'] > 0.5 else None)
+        with col2:
+            st.metric("💰 ROI", f"{stats['roi']:.1%}", 
+                     delta=f"{stats['roi']:+.1%}" if stats['roi'] > 0 else None)
+        with col3:
+            st.metric("🎫 Total Bets", stats["total_bets"])
+        with col4:
+            st.metric("⚡ Avg Edge", f"{statistics.mean(history_df['Edge']) if 'Edge' in history_df.columns else 0:.1%}" if not history_df.empty else "0.0%")
+    
+    # Sport Performance Chart
+    if sport_stats:
+        st.markdown("### 🏆 Sport Performance")
+        sport_df = pd.DataFrame([
+            {"Sport": sport, "Win Rate": win_rate, "Bets": len(history_df[history_df['Sport'] == sport])} 
+            for sport, win_rate in sport_stats.items()
+        ]).sort_values('Win Rate', ascending=False)
         
-        if stats["total_bets"] > 0:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Win Rate", f"{stats['win_rate']:.1%}")
-            with col2:
-                st.metric("ROI", f"{stats['roi']:.1%}")
-            with col3:
-                st.metric("Total Bets", stats["total_bets"])
-            
-            # Sport-specific performance
-            if stats["sport_stats"]:
-                st.markdown("### 📊 Sport Performance")
-                sport_df = pd.DataFrame([
-                    {"Sport": sport, "Win Rate": win_rate} 
-                    for sport, win_rate in stats["sport_stats"].items()
-                ])
-                st.dataframe(sport_df.style.format({"Win Rate": "{:.1%}"}), use_container_width=True)
-        
-        st.divider()
-        
-        # Display history table
-        display_df = df.copy()
-        
-        if 'Result' not in display_df.columns:
-            display_df['Result'] = 'Pending'
-        
-        display_df['Result_Display'] = display_df['Result'].apply(utils.format_result_badge)
-        
-        if 'Profit' in display_df.columns:
-            display_df['Profit_Display'] = display_df.apply(
-                lambda x: utils.format_currency(x['Profit']) if x['Result'] != 'Pending' else '-', 
-                axis=1
-            )
-        
-        if 'Formatted_Date' in display_df.columns:
-            display_df = display_df.rename(columns={'Formatted_Date': 'Match Time'})
-        elif 'Date' in display_df.columns:
-            display_df = display_df.rename(columns={'Date': 'Match Time'})
-        
-        # Select columns to display
-        cols_to_show = ['Match Time', 'Sport', 'Match', 'Bet', 'Odds', 'Result_Display', 'Profit_Display']
-        cols_to_show = [c for c in cols_to_show if c in display_df.columns]
-        
-        # Create a clean display table
-        st.markdown("### 📋 Bet History")
-        st.dataframe(
-            display_df[cols_to_show]
-            .rename(columns={
-                'Result_Display': 'Result', 
-                'Profit_Display': 'Profit'
-            })
-            .style.set_properties(**{
-                'text-align': 'center'
-            }),
-            use_container_width=True
+        # Clean sport performance visualization
+        fig = px.bar(
+            sport_df, 
+            x='Sport', 
+            y='Win Rate',
+            color='Win Rate',
+            color_continuous_scale=['#ff4d4d', '#00e676'],
+            text=sport_df.apply(lambda x: f"{x['Win Rate']:.0%} ({x['Bets']})", axis=1),
+            title="Win Rate by Sport (Min. 5 Bets)"
         )
-        
-        # Download button
-        st.download_button(
-            "📥 Download Full History", 
-            df.to_csv(index=False).encode('utf-8'), 
-            "betting_history.csv", 
-            "text/csv",
-            use_container_width=True
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#e0e0e0'),
+            xaxis_title="",
+            yaxis_title="Win Rate",
+            yaxis=dict(tickformat='.0%'),
+            height=400
         )
-    else:
-        st.info("No betting history found. Place your first bet to start tracking!")
+        fig.update_traces(
+            marker_line_color='#2d3748',
+            marker_line_width=1.5,
+            opacity=0.9
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.divider()
+    
+    # Clean Results Table
+    st.markdown("### 📋 Recent Bets")
+    
+    # Prepare display data
+    display_df = history_df.copy()
+    display_df = display_df.sort_values('Date_Obj', ascending=False)
+    
+    # Format result column properly - FIX: This is where the error was
+    display_df['Status'] = display_df['Result'].apply(lambda x: 
+        "✅ WIN" if x == 'Win' else 
+        "❌ LOSS" if x in ['Loss', 'Auto-Settled'] else 
+        "🔄 PENDING" if x == 'Pending' else 
+        "⚖️ PUSH" if x == 'Push' else 
+        "⏳ PENDING"
+    )
+    
+    # Format profit column
+    display_df['Profit_Display'] = display_df.apply(
+        lambda x: f"+${x['Profit']:.2f}" if x['Result'] == 'Win' else 
+                 f"-${abs(x['Profit']):.2f}" if x['Result'] in ['Loss', 'Auto-Settled', 'Push'] else 
+                 "Pending",
+        axis=1
+    )
+    
+    # Select columns to display
+    cols_to_show = ['Formatted_Date', 'Sport', 'Match', 'Bet', 'Odds', 'Edge', 'Stake', 'Status', 'Profit_Display']
+    cols_to_show = [c for c in cols_to_show if c in display_df.columns]
+    
+    # Create clean display table
+    st.dataframe(
+        display_df[cols_to_show].rename(columns={
+            'Formatted_Date': 'Date',
+            'Edge': 'Edge %',
+            'Stake': 'Stake ($)',
+            'Profit_Display': 'Profit'
+        }).style.format({
+            'Odds': '{:.2f}',
+            'Edge %': '{:.1%}',
+            'Stake ($)': '${:.2f}'
+        }).background_gradient(
+            subset=['Edge %'], 
+            cmap='viridis',
+            vmin=0.02,
+            vmax=0.15
+        ),
+        use_container_width=True,
+        height=400
+    )
+    
+    # Download button
+    st.download_button(
+        "📥 Export Full History", 
+        history_df.to_csv(index=False).encode('utf-8'), 
+        "betting_history.csv", 
+        "text/csv",
+        use_container_width=True
+    )
 
 def render_about():
     st.markdown('<p class="gradient-text">ℹ️ About</p>', unsafe_allow_html=True)
@@ -432,7 +485,7 @@ def render_about():
     st.markdown("""
     ## 🚀 Betting Co-Pilot Pro
     
-    **Version 67.0 (Strict Parlay Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
+    **Version 68.0 (Auto-Settlement Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
     
     ### 🔍 Core Features
     
@@ -440,7 +493,7 @@ def render_about():
     - **Professional Bankroll Management**: Quarter-Kelly staking with volatility adjustments
     - **Multi-Sport Coverage**: Soccer, NFL, NBA, MLB with specialized models for each
     - **Strict Parlay Builder**: Algorithmically constructed parlays with risk controls
-    - **Arbitrage Alerts**: Real-time detection of risk-free profit opportunities
+    - **Auto-Settlement**: Automatically closes past bets that are still marked as pending
     
     ### ⚙️ Technical Stack
     
@@ -474,4 +527,5 @@ def render_about():
         **Configuration**:
         - GitHub Repo: `{utils.GITHUB_USERNAME}/{utils.GITHUB_REPO}`
         - Streamlit Cloud: ✅ Connected
+        - Auto-Settlement: ✅ Active
         """)
