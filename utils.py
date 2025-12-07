@@ -1,9 +1,9 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v69.0 (Score Display & Settlement Enhancement)
-# FIX: Added settle_bets_with_scores() function
-# FIX: Added format_result_with_score() function
-# FIX: Improved date handling and auto-settlement logic
+# v70.0 (Final Settlement & Score Display Fix)
+# FIX: Now correctly determines wins/losses using actual scores
+# FIX: Shows final scores prominently in history table
+# FIX: Properly displays settled results instead of "Pending"
 
 import streamlit as st
 import pandas as pd
@@ -13,6 +13,7 @@ import numpy as np
 import logging
 import os
 import config
+from fuzzywuzzy import process
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +27,7 @@ GITHUB_REPO = st.secrets.get("github_repo", config.GITHUB_REPO if hasattr(config
 # Fixed URL formatting (removed extra spaces)
 LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
 HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/betting_history.csv"
+SCORES_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/match_scores.csv"
 
 @st.cache_data(ttl=600)
 def load_data(url):
@@ -85,18 +87,48 @@ def load_data(url):
         logger.exception(f"Unexpected error loading {url}: {str(e)}")
         return "FILE_NOT_FOUND"
 
+def get_actual_scores():
+    """Get actual scores from a dedicated scores file"""
+    try:
+        # Try to load scores data
+        scores_df = load_data(SCORES_URL)
+        if not isinstance(scores_df, pd.DataFrame) or scores_df.empty:
+            logger.warning("No scores data available")
+            return pd.DataFrame()
+        
+        # Ensure proper date formatting
+        if 'Date' in scores_df.columns:
+            scores_df['Date_Obj'] = pd.to_datetime(scores_df['Date'], errors='coerce', utc=True)
+        
+        return scores_df
+    except Exception as e:
+        logger.error(f"Error loading scores: {str(e)}")
+        return pd.DataFrame()
+
+def determine_match_result(home_score, away_score):
+    """Determine match result based on scores"""
+    if home_score > away_score:
+        return 'Home Win'
+    elif away_score > home_score:
+        return 'Away Win'
+    else:
+        return 'Draw'
+
 def settle_bets_with_scores(history_df):
     """Auto-settle bets using actual scores when available"""
     if not isinstance(history_df, pd.DataFrame) or history_df.empty:
         return history_df
+    
+    # Get actual scores data
+    scores_df = get_actual_scores()
     
     current_time = datetime.now(timezone.utc)
     settled_count = 0
     corrected_count = 0
     
     for idx, row in history_df.iterrows():
-        # Skip if already settled and has a proper score
-        if row.get('Result') in ['Win', 'Loss', 'Push'] and row.get('Score') and row.get('Score') != 'N/A':
+        # Skip if already settled with a proper score
+        if row.get('Result') in ['Win', 'Loss', 'Push'] and row.get('Score') and row.get('Score') != 'N/A' and row.get('Score') != '':
             continue
             
         # Get match details
@@ -111,21 +143,35 @@ def settle_bets_with_scores(history_df):
         
         # Settle past matches (2+ hours old)
         if match_date < current_time - timedelta(hours=2):
-            # If score is available, determine correct result
-            if actual_score and actual_score != 'N/A' and ' - ' in actual_score:
-                try:
-                    home_score_str, away_score_str = actual_score.split(' - ')
-                    home_score = int(home_score_str.strip())
-                    away_score = int(away_score_str.strip())
-                    home_team, away_team = match_name.split(' vs ')
+            # If we have scores data, look up the actual score
+            if not scores_df.empty and 'Match' in scores_df.columns and 'HomeScore' in scores_df.columns and 'AwayScore' in scores_df.columns:
+                # Find the matching game using fuzzy matching
+                home_team, away_team = match_name.split(' vs ')
+                matching_score = None
+                
+                # Try exact match first
+                exact_match = scores_df[scores_df['Match'] == match_name]
+                if not exact_match.empty:
+                    matching_score = exact_match.iloc[0]
+                else:
+                    # Try fuzzy match
+                    match_scores = []
+                    for _, score_row in scores_df.iterrows():
+                        similarity = process.extractOne(match_name, [score_row['Match']])[1]
+                        if similarity > 85:  # 85% similarity threshold
+                            match_scores.append((score_row, similarity))
+                    
+                    if match_scores:
+                        # Get the best match
+                        matching_score = sorted(match_scores, key=lambda x: x[1], reverse=True)[0][0]
+                
+                if matching_score is not None:
+                    home_score = int(matching_score['HomeScore'])
+                    away_score = int(matching_score['AwayScore'])
+                    actual_score = f"{home_score} - {away_score}"
                     
                     # Determine actual outcome
-                    if home_score > away_score:
-                        actual_result = 'Home Win'
-                    elif away_score > home_score:
-                        actual_result = 'Away Win'
-                    else:
-                        actual_result = 'Draw'
+                    actual_result = determine_match_result(home_score, away_score)
                     
                     # Determine if bet won
                     if (predicted_bet == 'Home Win' and actual_result == 'Home Win') or \
@@ -133,14 +179,37 @@ def settle_bets_with_scores(history_df):
                        (predicted_bet == 'Draw' and actual_result == 'Draw'):
                         history_df.at[idx, 'Result'] = 'Win'
                         history_df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
-                        corrected_count += 1
                     else:
                         history_df.at[idx, 'Result'] = 'Loss'
                         history_df.at[idx, 'Profit'] = -row['Stake']
-                        corrected_count += 1
+                    
+                    history_df.at[idx, 'Score'] = actual_score
+                    settled_count += 1
+                    corrected_count += 1
+                    continue
+            
+            # If score is available in the history row itself, use it
+            if actual_score and actual_score != 'N/A' and actual_score != '' and ' - ' in actual_score:
+                try:
+                    home_score_str, away_score_str = actual_score.split(' - ')
+                    home_score = int(home_score_str.strip())
+                    away_score = int(away_score_str.strip())
+                    
+                    # Determine actual outcome
+                    actual_result = determine_match_result(home_score, away_score)
+                    
+                    # Determine if bet won
+                    if (predicted_bet == 'Home Win' and actual_result == 'Home Win') or \
+                       (predicted_bet == 'Away Win' and actual_result == 'Away Win') or \
+                       (predicted_bet == 'Draw' and actual_result == 'Draw'):
+                        history_df.at[idx, 'Result'] = 'Win'
+                        history_df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
+                    else:
+                        history_df.at[idx, 'Result'] = 'Loss'
+                        history_df.at[idx, 'Profit'] = -row['Stake']
                     
                     settled_count += 1
-                    
+                    corrected_count += 1
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Error processing score for {match_name}: {str(e)}")
             
@@ -148,6 +217,7 @@ def settle_bets_with_scores(history_df):
             elif row.get('Result', 'Pending') == 'Pending':
                 history_df.at[idx, 'Result'] = 'Auto-Settled'
                 history_df.at[idx, 'Profit'] = -row['Stake']  # Conservative: assume loss
+                history_df.at[idx, 'Score'] = 'N/A'  # No score available
                 settled_count += 1
     
     if settled_count > 0:
@@ -159,9 +229,15 @@ def settle_bets_with_scores(history_df):
 
 def format_result_with_score(result, score):
     """Format result with score information for display"""
-    if not score or score == 'N/A' or result == 'Pending':
+    # Handle missing or invalid scores
+    if not score or score == 'N/A' or score == '' or result == 'Pending':
+        if result == 'Win':
+            return "✅ WIN (Score Pending)"
+        elif result == 'Loss':
+            return "❌ LOSS (Score Pending)"
         return "⏳ PENDING"
     
+    # Format based on result
     if result == 'Win':
         return f"✅ WIN ({score})"
     elif result == 'Loss':
@@ -448,6 +524,16 @@ def inject_custom_css():
             background: rgba(0, 0, 0, 0.2);
             border-radius: 0 0 8px 8px;
             padding: 15px;
+        }
+        
+        /* Final score column styling */
+        .final-score {
+            font-weight: bold;
+            color: #00C9FF;
+        }
+        .score-pending {
+            color: #888;
+            font-style: italic;
         }
     </style>
     """, unsafe_allow_html=True)
