@@ -1,8 +1,9 @@
 # views.py
-# The "Strict Parlay" Layouts (v68.0 - Streamlit Cloud Ready)
-# FIX: Corrected column name mismatch in history display
+# The "Strict Parlay" Layouts (v69.0 - Score Display & Settlement Fix)
+# FIX: Correctly determines wins/losses using actual scores
+# FIX: Shows final scores prominently in history table
 # FIX: Removed raw HTML spans for clean result display
-# FIX: Added proper auto-settlement for past matches
+# FIX: Fixed AttributeError on column references
 
 import streamlit as st
 import pandas as pd
@@ -359,14 +360,8 @@ def render_history():
         st.info("No betting history yet. Place your first bet to start tracking performance!")
         return
     
-    # Auto-settle past matches that are still marked as pending
-    current_time = datetime.now(timezone.utc)
-    for idx, row in history_df.iterrows():
-        if row.get('Result', 'Pending') == 'Pending' and 'Date_Obj' in history_df.columns:
-            match_time = pd.to_datetime(row['Date_Obj'], utc=True)
-            if match_time < current_time - timedelta(hours=2):  # Settle matches 2+ hours old
-                history_df.at[idx, 'Result'] = 'Auto-Settled'
-                history_df.at[idx, 'Profit'] = -row.get('Stake', 0)  # Default to loss
+    # Auto-settle past matches with actual scores
+    history_df = utils.settle_bets_with_scores(history_df)
     
     # Performance stats
     stats = utils.get_performance_stats(history_df)
@@ -402,7 +397,7 @@ def render_history():
             color='Win Rate',
             color_continuous_scale=['#ff4d4d', '#00e676'],
             text=sport_df.apply(lambda x: f"{x['Win Rate']:.0%} ({x['Bets']})", axis=1),
-            title="Win Rate by Sport (Min. 5 Bets)"
+            title="Win Rate by Sport"
         )
         fig.update_layout(
             plot_bgcolor='rgba(0,0,0,0)',
@@ -422,53 +417,62 @@ def render_history():
     
     st.divider()
     
-    # Clean Results Table
+    # Enhanced Results Table with Scores
     st.markdown("### 📋 Recent Bets")
     
     # Prepare display data
     display_df = history_df.copy()
     display_df = display_df.sort_values('Date_Obj', ascending=False)
     
-    # Format result column properly - FIXED: Using correct column reference
-    display_df['Status'] = display_df['Result'].apply(lambda x: 
-        "✅ WIN" if x == 'Win' else 
-        "❌ LOSS" if x in ['Loss', 'Auto-Settled'] else 
-        "🔄 PENDING" if x == 'Pending' else 
-        "⚖️ PUSH" if x == 'Push' else 
-        "⏳ PENDING"
+    # Format result column properly with score context
+    display_df['Result_Display'] = display_df.apply(
+        lambda x: utils.format_result_with_score(x['Result'], x.get('Score', '')), 
+        axis=1
     )
     
     # Format profit column
     display_df['Profit_Display'] = display_df.apply(
         lambda x: f"+${x['Profit']:.2f}" if x['Result'] == 'Win' else 
-                 f"-${abs(x['Profit']):.2f}" if x['Result'] in ['Loss', 'Auto-Settled', 'Push'] else 
+                 f"-${abs(x['Profit']):.2f}" if x['Result'] in ['Loss', 'Push'] else 
                  "Pending",
         axis=1
     )
     
+    # Show actual score prominently
+    display_df['Match_Score'] = display_df.apply(
+        lambda x: f"{x.get('Score', 'N/A')}" if x.get('Score') and x.get('Score') != 'N/A' else "Result Pending",
+        axis=1
+    )
+    
     # Select columns to display
-    cols_to_show = ['Formatted_Date', 'Sport', 'Match', 'Bet', 'Odds', 'Edge', 'Stake', 'Status', 'Profit_Display']
+    cols_to_show = ['Formatted_Date', 'Sport', 'Match', 'Match_Score', 'Bet', 'Odds', 'Edge', 'Stake', 'Result_Display', 'Profit_Display']
     cols_to_show = [c for c in cols_to_show if c in display_df.columns]
     
-    # Create clean display table
+    # Create clean display table with scores
     st.dataframe(
         display_df[cols_to_show].rename(columns={
             'Formatted_Date': 'Date',
             'Edge': 'Edge %',
             'Stake': 'Stake ($)',
-            'Profit_Display': 'Profit'
+            'Result_Display': 'Result',
+            'Profit_Display': 'Profit',
+            'Match_Score': 'Final Score'
         }).style.format({
             'Odds': '{:.2f}',
             'Edge %': '{:.1%}',
             'Stake ($)': '${:.2f}'
-        }).background_gradient(
-            subset=['Edge %'], 
-            cmap='viridis',
-            vmin=0.02,
-            vmax=0.15
+        }).applymap(
+            lambda x: 'background-color: rgba(0, 230, 118, 0.2); color: #69f0ae' if 'WIN' in str(x).upper() else 
+                     'background-color: rgba(255, 82, 82, 0.2); color: #ff8a80' if 'LOSS' in str(x).upper() else 
+                     'background-color: rgba(255, 204, 0, 0.2); color: #ffcc80' if 'PENDING' in str(x).upper() else 
+                     'background-color: rgba(158, 158, 158, 0.2); color: #bdbdbd' if 'PUSH' in str(x).upper() else '',
+            subset=['Result']
+        ).applymap(
+            lambda x: 'font-weight: bold; color: #00C9FF' if x != 'Result Pending' else 'color: #888',
+            subset=['Final Score']
         ),
         use_container_width=True,
-        height=400
+        height=450
     )
     
     # Download button
@@ -486,7 +490,7 @@ def render_about():
     st.markdown("""
     ## 🚀 Betting Co-Pilot Pro
     
-    **Version 68.0 (Auto-Settlement Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
+    **Version 69.0 (Score Display Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
     
     ### 🔍 Core Features
     
@@ -494,7 +498,7 @@ def render_about():
     - **Professional Bankroll Management**: Quarter-Kelly staking with volatility adjustments
     - **Multi-Sport Coverage**: Soccer, NFL, NBA, MLB with specialized models for each
     - **Strict Parlay Builder**: Algorithmically constructed parlays with risk controls
-    - **Auto-Settlement**: Automatically closes past bets that are still marked as pending
+    - **Score Verification**: All settled bets show final scores for complete transparency
     
     ### ⚙️ Technical Stack
     
@@ -529,4 +533,5 @@ def render_about():
         - GitHub Repo: `{utils.GITHUB_USERNAME}/{utils.GITHUB_REPO}`
         - Streamlit Cloud: ✅ Connected
         - Auto-Settlement: ✅ Active
+        - Score Tracking: ✅ Enabled
         """)
