@@ -258,3 +258,133 @@ AttributeError: 'datetime.datetime' object has no attribute 'normalize'
 2025-12-06 10:02:16,342 [INFO] 😴 ANALYSIS COMPLETE: No value bets found today
 2025-12-06 10:02:16,342 [INFO] 🔔 PHASE 4: SENDING NOTIFICATIONS
 2025-12-06 10:02:16,343 [ERROR] Discord alert failed: Invalid URL 'dummy_webhook': No scheme supplied. Perhaps you meant https://dummy_webhook?
+2025-12-07 10:09:05,896 [INFO] ============================================================
+2025-12-07 10:09:05,896 [INFO] 🚀 STARTING DAILY BETTING ANALYSIS PIPELINE
+2025-12-07 10:09:05,896 [INFO] UTC Timestamp: 2025-12-07T10:09:05.896557+00:00
+2025-12-07 10:09:05,896 [INFO] 🏁 PHASE 1: SETTLING EXISTING BETS
+2025-12-07 10:09:05,896 [INFO] --- ⚖️ Running Settlement Engine ---
+2025-12-07 10:09:05,905 [ERROR] BET SETTLEMENT FAILED - continuing pipeline
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/backend_runner.py", line 214, in run_backend_analysis
+    betting_engine.settle_bets()
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 825, in settle_bets
+    df = settle_soccer_bets(df)
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 733, in settle_soccer_bets
+    (pd.to_datetime(df['Date']) <= datetime.now(timezone.utc).normalize())
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:05,906 [INFO] 🧠 PHASE 2: GENERATING BET RECOMMENDATIONS
+2025-12-07 10:09:05,906 [INFO] ⚽ Running Soccer module...
+2025-12-07 10:09:05,906 [INFO] --- Running Global Soccer Module ---
+2025-12-07 10:09:05,906 [INFO] Processing soccer_epl
+2025-12-07 10:09:06,095 [ERROR] Odds API request failed for soccer_epl: 401 Client Error: Unauthorized for url: https://api.the-odds-api.com/v4/sports/soccer_epl/odds?api_key=dummy_key_for_github_only&regions=us&markets=h2h%2Cspreads&oddsFormat=decimal&dateFormat=iso
+2025-12-07 10:09:06,095 [INFO] Training new brain for E0
+2025-12-07 10:09:07,025 [ERROR] Failed to fetch soccer results for E0: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:08,013 [ERROR] Failed to fetch soccer results for E0: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:08,780 [ERROR] Failed to fetch soccer results for E0: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:08,782 [ERROR] No data available for league E0
+2025-12-07 10:09:08,782 [INFO] Processing soccer_spain_la_liga
+2025-12-07 10:09:08,805 [ERROR] Odds API request failed for soccer_spain_la_liga: 401 Client Error: Unauthorized for url: https://api.the-odds-api.com/v4/sports/soccer_spain_la_liga/odds?api_key=dummy_key_for_github_only&regions=us&markets=h2h%2Cspreads&oddsFormat=decimal&dateFormat=iso
+2025-12-07 10:09:08,805 [INFO] Training new brain for SP1
+2025-12-07 10:09:09,568 [ERROR] Failed to fetch soccer results for SP1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:10,325 [ERROR] Failed to fetch soccer results for SP1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:11,217 [ERROR] Failed to fetch soccer results for SP1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:11,219 [ERROR] No data available for league SP1
+2025-12-07 10:09:11,219 [INFO] Processing soccer_germany_bundesliga
+2025-12-07 10:09:11,251 [ERROR] Odds API request failed for soccer_germany_bundesliga: 401 Client Error: Unauthorized for url: https://api.the-odds-api.com/v4/sports/soccer_germany_bundesliga/odds?api_key=dummy_key_for_github_only&regions=us&markets=h2h%2Cspreads&oddsFormat=decimal&dateFormat=iso
+2025-12-07 10:09:11,251 [INFO] Training new brain for D1
+2025-12-07 10:09:12,203 [ERROR] Failed to fetch soccer results for D1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:13,002 [ERROR] Failed to fetch soccer results for D1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:13,814 [ERROR] Failed to fetch soccer results for D1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:13,816 [ERROR] No data available for league D1
+2025-12-07 10:09:13,816 [INFO] Processing soccer_italy_serie_a
+2025-12-07 10:09:13,838 [ERROR] Odds API request failed for soccer_italy_serie_a: 401 Client Error: Unauthorized for url: https://api.the-odds-api.com/v4/sports/soccer_italy_serie_a/odds?api_key=dummy_key_for_github_only&regions=us&markets=h2h%2Cspreads&oddsFormat=decimal&dateFormat=iso
+2025-12-07 10:09:13,838 [INFO] Training new brain for I1
+2025-12-07 10:09:14,773 [ERROR] Failed to fetch soccer results for I1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:15,786 [ERROR] Failed to fetch soccer results for I1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:16,554 [ERROR] Failed to fetch soccer results for I1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:16,555 [ERROR] No data available for league I1
+2025-12-07 10:09:16,555 [INFO] Processing soccer_france_ligue_one
+2025-12-07 10:09:16,594 [ERROR] Odds API request failed for soccer_france_ligue_one: 401 Client Error: Unauthorized for url: https://api.the-odds-api.com/v4/sports/soccer_france_ligue_one/odds?api_key=dummy_key_for_github_only&regions=us&markets=h2h%2Cspreads&oddsFormat=decimal&dateFormat=iso
+2025-12-07 10:09:16,594 [INFO] Training new brain for F1
+2025-12-07 10:09:17,329 [ERROR] Failed to fetch soccer results for F1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:18,125 [ERROR] Failed to fetch soccer results for F1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:19,042 [ERROR] Failed to fetch soccer results for F1: 'datetime.datetime' object has no attribute 'normalize'
+Traceback (most recent call last):
+  File "/home/runner/work/betting-copilot-pro/betting-copilot-pro/betting_engine.py", line 346, in get_soccer_results
+    current_date = datetime.now(timezone.utc).normalize()
+AttributeError: 'datetime.datetime' object has no attribute 'normalize'
+2025-12-07 10:09:19,043 [ERROR] No data available for league F1
+2025-12-07 10:09:19,043 [INFO] Processing soccer_uefa_champs_league
+2025-12-07 10:09:19,074 [ERROR] Odds API request failed for soccer_uefa_champs_league: 401 Client Error: Unauthorized for url: https://api.the-odds-api.com/v4/sports/soccer_uefa_champs_league/odds?api_key=dummy_key_for_github_only&regions=us&markets=h2h%2Cspreads&oddsFormat=decimal&dateFormat=iso
+2025-12-07 10:09:19,074 [INFO] Generated 0 soccer bets
+2025-12-07 10:09:19,074 [INFO] ✅ Soccer: 0 bets found
+2025-12-07 10:09:19,074 [INFO] ⚽ Running NFL module...
+2025-12-07 10:09:19,075 [WARNING] NFL module not implemented in this refactored version
+2025-12-07 10:09:19,075 [INFO] ✅ NFL: 0 bets found
+2025-12-07 10:09:19,075 [INFO] ⚽ Running NBA module...
+2025-12-07 10:09:19,075 [WARNING] NBA module not implemented in this refactored version
+2025-12-07 10:09:19,075 [INFO] ✅ NBA: 0 bets found
+2025-12-07 10:09:19,075 [INFO] ⚽ Running MLB module...
+2025-12-07 10:09:19,076 [WARNING] MLB module not implemented in this refactored version
+2025-12-07 10:09:19,076 [INFO] ✅ MLB: 0 bets found
+2025-12-07 10:09:19,076 [INFO] 💾 PHASE 3: SAVING RESULTS
+2025-12-07 10:09:19,084 [INFO] Saved 0 latest bets
+2025-12-07 10:09:19,084 [INFO] 😴 ANALYSIS COMPLETE: No value bets found today
+2025-12-07 10:09:19,084 [INFO] 🔔 PHASE 4: SENDING NOTIFICATIONS
+2025-12-07 10:09:19,085 [ERROR] Discord alert failed: Invalid URL 'dummy_webhook': No scheme supplied. Perhaps you meant https://dummy_webhook?
