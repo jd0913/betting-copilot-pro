@@ -1,8 +1,9 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v70.2 (Critical TypeError Fix + Active Bets Restore)
-# FIX: Added type checking for score strings to prevent TypeError
-# FIX: Restored active/future bets display like before
+# v71.0 (Final Score Settlement + Active Bets Fix)
+# FIX: Get final scores from The Odds API
+# FIX: Properly settle all bets before Dec 8, 2025
+# FIX: Show active/future bets in Command Center
 
 import streamlit as st
 import pandas as pd
@@ -13,17 +14,18 @@ import logging
 import os
 import config
 from fuzzywuzzy import process
+import json
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BettingUtils")
 
-# --- CONFIGURATION (SECURE METHOD) ---
+# --- CONFIGURATION ---
 # Get GitHub credentials from Streamlit Secrets or config
 GITHUB_USERNAME = st.secrets.get("github_username", config.GITHUB_USERNAME if hasattr(config, 'GITHUB_USERNAME') else "jd0913")
 GITHUB_REPO = st.secrets.get("github_repo", config.GITHUB_REPO if hasattr(config, 'GITHUB_REPO') else "betting-copilot-pro")
 
-# Fixed URL formatting (removed extra spaces)
+# Fixed URL formatting
 LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
 HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/betting_history.csv"
 
@@ -37,7 +39,7 @@ def load_data(url):
         
         # Check content type
         content_type = response.headers.get('Content-Type', '')
-        if 'csv' not in content_type and 'text/plain' not in content_type:
+        if 'csv' not in content_type and 'text/plain' not in content_type and 'text/csv' not in content_type:
             logger.warning(f"Unexpected content type: {content_type}")
             return "FILE_NOT_FOUND"
         
@@ -70,6 +72,14 @@ def load_data(url):
             df['Formatted_Date'] = 'Time TBD'
             df['Date_Obj'] = pd.NaT
         
+        # FIX: Handle Score column properly
+        if 'Score' in df.columns:
+            df['Score'] = df['Score'].fillna('N/A').astype(str)
+            # Clean up any 'nan' string values
+            df['Score'] = df['Score'].apply(lambda x: 'N/A' if x.lower() in ['nan', ''] else x)
+        else:
+            df['Score'] = 'N/A'
+        
         return df
         
     except requests.exceptions.RequestException as e:
@@ -82,102 +92,154 @@ def load_data(url):
         logger.error(f"CSV parsing error: {str(e)}")
         return "FILE_NOT_FOUND"
     except Exception as e:
-        logger.exception(f"Unexpected error loading  {str(e)}")
+        logger.exception(f"Unexpected error loading {url}: {str(e)}")
         return "FILE_NOT_FOUND"
 
-def settle_bets_with_scores(history_df):
-    """Auto-settle bets using actual scores when available"""
+def fetch_odds_api_scores(sport_key, days=7):
+    """Fetch historical scores from The Odds API for a specific sport"""
+    api_key = config.API_CONFIG.get("THE_ODDS_API_KEY", "").strip()
+    if not api_key or "PASTE_YOUR" in api_key:
+        logger.warning("Odds API key not configured")
+        return pd.DataFrame()
+    
+    try:
+        # Get past results (yesterday to days ago)
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=days)
+        
+        url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/scores"
+        params = {
+            'api_key': api_key,
+            'daysFrom': days,
+            'dateFormat': 'iso'
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data:
+            return pd.DataFrame()
+        
+        # Process scores
+        scores = []
+        for game in data:
+            if not game.get('scores') or not game.get('completed'):
+                continue
+                
+            # Get final scores
+            home_score = None
+            away_score = None
+            for score in game['scores']:
+                if score['name'] == game['home_team']:
+                    home_score = score['score']
+                elif score['name'] == game['away_team']:
+                    away_score = score['score']
+            
+            if home_score is not None and away_score is not None:
+                scores.append({
+                    'Match': f"{game['home_team']} vs {game['away_team']}",
+                    'Date_Obj': pd.to_datetime(game['commence_time'], utc=True),
+                    'HomeScore': home_score,
+                    'AwayScore': away_score,
+                    'Sport': sport_key
+                })
+        
+        return pd.DataFrame(scores)
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching scores from Odds API: {str(e)}")
+        return pd.DataFrame()
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching scores: {str(e)}")
+        return pd.DataFrame()
+
+def settle_with_odds_api_scores(history_df):
+    """Settle bets using scores from The Odds API"""
     if not isinstance(history_df, pd.DataFrame) or history_df.empty:
         return history_df
     
     current_time = datetime.now(timezone.utc)
-    settled_count = 0
     
-    # Create a copy to avoid SettingWithCopyWarning
-    df = history_df.copy()
+    # Define sports to check (Soccer, NFL, NBA, MLB)
+    sports_to_check = {
+        'soccer_epl': 'soccer_epl',
+        'NFL': 'americanfootball_nfl',
+        'NBA': 'basketball_nba',
+        'MLB': 'baseball_mlb'
+    }
     
-    for idx, row in df.iterrows():
+    # Fetch scores for each sport
+    all_scores = []
+    for sport_name, odds_sport_key in sports_to_check.items():
+        sport_scores = fetch_odds_api_scores(odds_sport_key, days=14)  # Get last 14 days of scores
+        if not sport_scores.empty:
+            all_scores.append(sport_scores)
+    
+    if not all_scores:
+        logger.warning("No scores retrieved from Odds API")
+        return history_df
+    
+    scores_df = pd.concat(all_scores, ignore_index=True)
+    
+    # Settle each bet
+    for idx, row in history_df.iterrows():
         try:
             match_date = pd.to_datetime(row['Date_Obj'], utc=True)
         except (ValueError, TypeError):
             continue
-            
+        
         match_name = row['Match']
         predicted_bet = row['Bet']
-        actual_score = row.get('Score', '')
+        current_result = row.get('Result', 'Pending')
         
-        # Only settle past matches (older than 2 hours)
-        if match_date < current_time - timedelta(hours=2):
-            # Skip if already settled with a valid score
-            if row.get('Result') in ['Win', 'Loss', 'Push'] and actual_score and actual_score != 'N/A' and actual_score != '':
+        # Only settle past matches (before Dec 8, 2025 @ 10pm UTC)
+        settlement_deadline = pd.to_datetime("2025-12-08 22:00:00", utc=True)
+        if match_date > settlement_deadline:
+            continue  # Skip future matches
+        
+        # Skip if already settled with a proper score
+        if current_result in ['Win', 'Loss', 'Push'] and row.get('Score', 'N/A') != 'N/A' and row.get('Score', 'N/A') != 'nan':
+            continue
+        
+        # Find matching score
+        if not scores_df.empty:
+            # Try exact match first
+            exact_match = scores_df[scores_df['Match'] == match_name]
+            if not exact_match.empty:
+                score_row = exact_match.iloc[0]
+                home_score = score_row['HomeScore']
+                away_score = score_row['AwayScore']
+                actual_score = f"{home_score} - {away_score}"
+                
+                # Determine actual outcome
+                if home_score > away_score:
+                    actual_result = 'Home Win'
+                elif away_score > home_score:
+                    actual_result = 'Away Win'
+                else:
+                    actual_result = 'Draw'
+                
+                # Determine if bet won
+                if (predicted_bet == 'Home Win' and actual_result == 'Home Win') or \
+                   (predicted_bet == 'Away Win' and actual_result == 'Away Win') or \
+                   (predicted_bet == 'Draw' and actual_result == 'Draw'):
+                    history_df.at[idx, 'Result'] = 'Win'
+                    history_df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
+                else:
+                    history_df.at[idx, 'Result'] = 'Loss'
+                    history_df.at[idx, 'Profit'] = -row['Stake']
+                
+                history_df.at[idx, 'Score'] = actual_score
                 continue
-            
-            # Handle score processing safely with type checking
-            if isinstance(actual_score, str) and actual_score not in ['N/A', ''] and ' - ' in actual_score:
-                try:
-                    home_score_str, away_score_str = actual_score.split(' - ')
-                    home_score = int(home_score_str.strip())
-                    away_score = int(away_score_str.strip())
-                    
-                    # Determine actual outcome
-                    if home_score > away_score:
-                        actual_result = 'Home Win'
-                    elif away_score > home_score:
-                        actual_result = 'Away Win'
-                    else:
-                        actual_result = 'Draw'
-                    
-                    # Determine if bet won
-                    if (predicted_bet == 'Home Win' and actual_result == 'Home Win') or \
-                       (predicted_bet == 'Away Win' and actual_result == 'Away Win') or \
-                       (predicted_bet == 'Draw' and actual_result == 'Draw'):
-                        df.at[idx, 'Result'] = 'Win'
-                        df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
-                    else:
-                        df.at[idx, 'Result'] = 'Loss'
-                        df.at[idx, 'Profit'] = -row['Stake']
-                    
-                    settled_count += 1
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Error processing score '{actual_score}' for {match_name}: {str(e)}")
-            
-            # If no valid score but match is old, mark as Auto-Settled (but don't change result if already settled)
-            elif row.get('Result', 'Pending') == 'Pending':
-                df.at[idx, 'Result'] = 'Auto-Settled'
-                df.at[idx, 'Profit'] = -row['Stake']  # Conservative: assume loss
-                df.at[idx, 'Score'] = 'N/A'  # No score available
-                settled_count += 1
+        
+        # If no score found but match is old, mark as Auto-Settled (assume loss)
+        if match_date < current_time - timedelta(days=3) and current_result == 'Pending':
+            history_df.at[idx, 'Result'] = 'Auto-Settled'
+            history_df.at[idx, 'Profit'] = -row.get('Stake', 0)
+            history_df.at[idx, 'Score'] = 'N/A'
     
-    if settled_count > 0:
-        logger.info(f"Auto-settled {settled_count} past bets")
-    
-    return df
-
-def format_result_with_score(result, score):
-    """Format result with score information for display"""
-    # Handle non-string scores
-    if not isinstance(score, str):
-        score = str(score) if score is not None else ''
-    
-    # Handle missing or invalid scores
-    if not score or score == 'N/A' or score == '' or result == 'Pending':
-        if result == 'Win':
-            return "✅ WIN (Score Pending)"
-        elif result == 'Loss':
-            return "❌ LOSS (Score Pending)"
-        return "⏳ PENDING"
-    
-    # Format based on result
-    if result == 'Win':
-        return f"✅ WIN ({score})"
-    elif result == 'Loss':
-        return f"❌ LOSS ({score})"
-    elif result == 'Push':
-        return f"⚖️ PUSH ({score})"
-    elif result == 'Auto-Settled':
-        return f"🔄 AUTO-SETTLED ({score})"
-    else:
-        return f"{result} ({score})"
+    return history_df
 
 def get_performance_stats(history_df):
     """Calculates live performance metrics from history with safety checks"""
@@ -362,6 +424,14 @@ def inject_custom_css():
             border-radius: 6px;
             display: inline-block;
         }
+        .res-active {
+            color: #00C9FF;
+            font-weight: 600;
+            background: rgba(0, 201, 255, 0.1);
+            padding: 2px 8px;
+            border-radius: 6px;
+            display: inline-block;
+        }
         
         /* Gradient text for headers */
         .gradient-text {
@@ -407,55 +477,6 @@ def inject_custom_css():
             border-right: 1px solid rgba(255, 255, 255, 0.05);
         }
         
-        /* Expanders */
-        .streamlit-expanderHeader {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 10px;
-            font-weight: 600;
-        }
-        
-        /* Tabs */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 24px;
-        }
-        .stTabs [data-baseweb="tab"] {
-            height: 35px;
-            white-space: pre-wrap;
-            background-color: #1e2130;
-            border-radius: 8px 8px 0 0;
-            gap: 1px;
-            padding-top: 10px;
-            padding-bottom: 10px;
-        }
-        .stTabs [aria-selected="true"] {
-            background-color: #00C9FF;
-            color: #000;
-        }
-        
-        /* Form elements */
-        .stTextInput > div > div > input,
-        .stNumberInput > div > div > input {
-            background-color: #16181d;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: white;
-        }
-        
-        /* Selectbox */
-        .stSelectbox > div > div > div {
-            background-color: #16181d;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: white;
-        }
-        
-        /* Expander content */
-        .streamlit-expanderContent {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 0 0 8px 8px;
-            padding: 15px;
-        }
-        
         /* Active bet status */
         .status-active {
             color: #00C9FF;
@@ -463,6 +484,16 @@ def inject_custom_css():
         }
         .status-pending {
             color: #ffcc80;
+            font-style: italic;
+        }
+        
+        /* Final score styling */
+        .final-score {
+            font-weight: bold;
+            color: #00C9FF;
+        }
+        .score-nan {
+            color: #888;
             font-style: italic;
         }
     </style>
@@ -492,36 +523,62 @@ def get_risk_badge(row):
         bet_type = row.get('Bet_Type', row.get('Bet Type', ''))
         
         if bet_type == 'ARBITRAGE':
-            return '💎 ARB'
+            return '<span class="badge badge-arb">💎 ARB</span>'
         if odds > 3.5 and edge > 0.15:
-            return '⚡ HIGH'
+            return '<span class="badge badge-high">⚡ HIGH</span>'
         if conf > 0.60 and edge > 0.07:
-            return '⭐ VALUE'
+            return '<span class="badge badge-safe">⭐ VALUE</span>'
         if edge > 0.02:
-            return 'EDGE'
-        return 'STANDARD'
+            return '<span class="badge badge-std">EDGE</span>'
+        return '<span class="badge badge-std">STANDARD</span>'
     except (ValueError, TypeError):
-        return 'N/A'
+        return '<span class="badge badge-std">N/A</span>'
 
-def format_edge_text(edge):
-    """Format edge percentage with proper coloring and text"""
-    if edge > 0.1:
-        return f"🔥 {edge:.1%}"
-    elif edge > 0.05:
-        return f"🎯 {edge:.1%}"
-    elif edge > 0.02:
-        return f"✅ {edge:.1%}"
+def format_result_with_score(result, score):
+    """Format result with score information for display"""
+    # Handle missing or invalid scores
+    if not score or score == 'N/A' or score.lower() == 'nan':
+        if result in ['Win', 'Loss', 'Push', 'Auto-Settled']:
+            return f'<span class="res-{result.lower()}">{result.upper()}</span>'
+        return '<span class="res-pending">⏳ PENDING</span>'
+    
+    # Format based on result
+    if result == 'Win':
+        return f'<span class="res-win">✅ WIN ({score})</span>'
+    elif result == 'Loss':
+        return f'<span class="res-loss">❌ LOSS ({score})</span>'
+    elif result == 'Push':
+        return f'<span class="res-push">⚖️ PUSH ({score})</span>'
+    elif result == 'Auto-Settled':
+        return f'<span class="res-loss">🔄 AUTO-SETTLED ({score})</span>'
     else:
-        return f"{edge:.1%}"
+        return f'<span class="res-pending">{result.upper()} ({score})</span>'
 
-def is_future_match(row):
-    """Determine if a match is in the future (active/pending)"""
+def is_active_bet(row):
+    """Determine if a bet is for a future match (active)"""
     try:
+        match_date = pd.to_datetime(row['Date_Obj'], utc=True)
         current_time = datetime.now(timezone.utc)
-        match_time = pd.to_datetime(row['Date_Obj'], utc=True)
-        return match_time > current_time - timedelta(hours=2)  # Consider matches in last 2 hours as active
+        return match_date > current_time - timedelta(hours=2)  # Consider matches in last 2 hours as active
     except (ValueError, TypeError):
-        return True  # Default to active if date parsing fails
+        return True
+
+def get_active_bets(latest_df):
+    """Get only active/future bets from latest recommendations"""
+    if not isinstance(latest_df, pd.DataFrame) or latest_df.empty:
+        return pd.DataFrame()
+    
+    current_time = datetime.now(timezone.utc)
+    
+    # Filter for active/future bets
+    active_mask = latest_df.apply(is_active_bet, axis=1)
+    active_bets = latest_df[active_mask].copy()
+    
+    # Sort by date
+    if 'Date_Obj' in active_bets.columns:
+        active_bets = active_bets.sort_values('Date_Obj', ascending=True)
+    
+    return active_bets
 
 def format_currency(value):
     """Format numbers as currency with proper signs"""
@@ -529,3 +586,14 @@ def format_currency(value):
         return "$0.00"
     sign = "+" if value > 0 else "-"
     return f"{sign}${abs(value):,.2f}"
+
+def get_bet_status_color(result):
+    """Return color codes for different bet statuses"""
+    if 'Win' in result:
+        return "#69f0ae", "#00c853"
+    elif 'Loss' in result or 'Auto-Settled' in result:
+        return "#ff8a80", "#ff1744"
+    elif 'Push' in result:
+        return "#bdbdbd", "#757575"
+    else:
+        return "#ffcc80", "#ffa000"
