@@ -1,9 +1,10 @@
 # config.py
-# Betting Co-Pilot Pro Configuration - v70.0 (Score Settlement Edition)
-# CRITICAL FIX: Added SCORES_URL and settlement parameters
+# Betting Co-Pilot Pro Configuration - v70.1 (Critical Fix)
+# FIX: Added missing sys import for Streamlit detection
 
 import streamlit as st
 import os
+import sys  # FIXED: Added missing import
 
 def get_secret(key: str, default: str = "") -> str:
     """
@@ -15,7 +16,7 @@ def get_secret(key: str, default: str = "") -> str:
         return env_val.strip()
     
     # 2. Streamlit secrets (when deployed on Streamlit Cloud)
-    if "streamlit" in sys.modules:
+    if "streamlit" in sys.modules:  # Now works with sys imported
         try:
             st_val = st.secrets.get(key)
             if st_val:
