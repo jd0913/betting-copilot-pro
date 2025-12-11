@@ -17,3 +17,4 @@ fuzzywuzzy
 python-levenshtein
 textblob
 pybaseball
+html5lib==1.1
