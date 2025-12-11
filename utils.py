@@ -1,8 +1,6 @@
 # utils.py
-# Shared functions for data loading, styling, and logic.
-# v71.1 (Critical AttributeError Fix)
-# FIX: Added missing settle_bets_with_scores() implementation
-# FIX: Added proper type checking for score processing
+# Updated version with Google score lookup
+# v72.0 - Added Google score scraping functionality
 
 import streamlit as st
 import pandas as pd
@@ -11,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import logging
 import os
-import json
+import time
+from bs4 import BeautifulSoup
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +25,7 @@ except KeyError:
     GITHUB_USERNAME = "jd0913"
     GITHUB_REPO = "betting-copilot-pro"
 
-# Fixed URL formatting (removed extra spaces)
+# Fixed URL formatting
 LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
 HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/betting_history.csv"
 
@@ -77,62 +76,150 @@ def load_data(url):
         logger.error(f"Error loading data from {url}: {str(e)}")
         return "FILE_NOT_FOUND"
 
-def settle_bets_with_scores(history_df):
-    """Auto-settle bets using actual scores"""
+def get_google_score(match_name):
+    """
+    Get match score directly from Google search results
+    Args:
+        match_name (str): Match name like "Arsenal vs Chelsea"
+    Returns:
+        str: Score in format "X - Y" or None if not found
+    """
+    try:
+        # Format search query
+        search_query = f"{match_name} score"
+        encoded_query = search_query.replace(' ', '+')
+        url = f"https://www.google.com/search?q={encoded_query}"
+        
+        # Add headers to avoid blocking
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # Parse the HTML
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Look for score elements (Google uses various class names)
+        score_elements = [
+            # Primary score elements
+            soup.find('div', class_='imso_mh__scr-sep'),
+            soup.find('div', class_='imso_mh__s-t'),
+            soup.find('div', class_='imso_mh__s-m'),
+            # Alternative elements
+            soup.find('div', class_='imso_mh__s-sc'),
+            soup.find('span', class_='imso_mh__t1-s'),
+            soup.find('span', class_='imso_mh__t2-s'),
+            # Generic score containers
+            soup.find('div', string=lambda text: text and ' - ' in text and any(c.isdigit() for c in text)),
+        ]
+        
+        # Try to extract score from elements
+        for element in score_elements:
+            if element:
+                score_text = element.get_text().strip()
+                # Look for patterns like "2 - 1", "3:0", "1-0"
+                import re
+                score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', score_text)
+                if score_match:
+                    home_score = score_match.group(1)
+                    away_score = score_match.group(2)
+                    return f"{home_score} - {away_score}"
+        
+        # If not found in structured elements, search in all divs
+        all_divs = soup.find_all('div')
+        for div in all_divs:
+            text = div.get_text().strip()
+            if ' - ' in text:
+                import re
+                score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', text)
+                if score_match:
+                    home_score = score_match.group(1)
+                    away_score = score_match.group(2)
+                    return f"{home_score} - {away_score}"
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Google score lookup failed for {match_name}: {str(e)}")
+        return None
+
+def determine_match_result(home_score, away_score):
+    """Determine match result based on scores"""
+    if home_score > away_score:
+        return 'Home Win'
+    elif away_score > home_score:
+        return 'Away Win'
+    else:
+        return 'Draw'
+
+def settle_bets_with_google_scores(history_df):
+    """
+    Auto-settle bets using Google score lookup for past matches
+    """
     if not isinstance(history_df, pd.DataFrame) or history_df.empty:
         return history_df
     
     current_time = datetime.now(timezone.utc)
-    settlement_deadline = pd.to_datetime("2025-12-08 22:00:00", utc=True)
+    settled_count = 0
     
-    # Process each bet
     for idx, row in history_df.iterrows():
+        # Skip if already settled with a valid result
+        if row.get('Result', 'Pending') in ['Win', 'Loss', 'Push']:
+            continue
+            
+        # Only process matches that are at least 2 hours old
         try:
-            match_date = pd.to_datetime(row['Date_Obj'], utc=True)
-        except (ValueError, TypeError):
+            match_time = pd.to_datetime(row['Date_Obj'], utc=True)
+            if match_time > current_time - timedelta(hours=2):
+                continue  # Skip recent/active matches
+        except:
             continue
-            
-        # Skip if already settled with a valid score
-        if row.get('Result', 'Pending') in ['Win', 'Loss', 'Push'] and row.get('Score', 'N/A') not in ['N/A', 'nan', '']:
-            continue
-            
-        # Only settle past matches before the deadline
-        if match_date < settlement_deadline:
-            # Determine actual outcome based on score
-            score = row.get('Score', 'N/A')
-            if isinstance(score, str) and score not in ['N/A', 'nan', ''] and ' - ' in score:
-                try:
-                    home_score_str, away_score_str = score.split(' - ')
-                    home_score = int(home_score_str.strip())
-                    away_score = int(away_score_str.strip())
-                    
-                    # Determine actual outcome
-                    if home_score > away_score:
-                        actual_result = 'Home Win'
-                    elif away_score > home_score:
-                        actual_result = 'Away Win'
-                    else:
-                        actual_result = 'Draw'
-                    
-                    # Determine if bet won
-                    bet_type = row['Bet']
-                    if (bet_type == 'Home Win' and actual_result == 'Home Win') or \
-                       (bet_type == 'Away Win' and actual_result == 'Away Win') or \
-                       (bet_type == 'Draw' and actual_result == 'Draw'):
-                        history_df.at[idx, 'Result'] = 'Win'
-                        history_df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
-                    else:
-                        history_df.at[idx, 'Result'] = 'Loss'
-                        history_df.at[idx, 'Profit'] = -row['Stake']
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Error processing score '{score}': {str(e)}")
-            
-            # If no valid score but match is well in the past, mark as Auto-Settled
-            elif match_date < current_time - timedelta(days=3) and row.get('Result', 'Pending') == 'Pending':
+        
+        # Get match score from Google
+        match_name = row['Match']
+        score = get_google_score(match_name)
+        
+        if score and ' - ' in score:
+            try:
+                home_score_str, away_score_str = score.split(' - ')
+                home_score = int(home_score_str.strip())
+                away_score = int(away_score_str.strip())
+                
+                # Determine actual result
+                actual_result = determine_match_result(home_score, away_score)
+                
+                # Determine if bet won
+                bet_type = row['Bet']
+                if (bet_type == 'Home Win' and actual_result == 'Home Win') or \
+                   (bet_type == 'Away Win' and actual_result == 'Away Win') or \
+                   (bet_type == 'Draw' and actual_result == 'Draw'):
+                    history_df.at[idx, 'Result'] = 'Win'
+                    history_df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
+                else:
+                    history_df.at[idx, 'Result'] = 'Loss'
+                    history_df.at[idx, 'Profit'] = -row['Stake']
+                
+                history_df.at[idx, 'Score'] = score
+                settled_count += 1
+                
+                logger.info(f"Settled bet {match_name} as {actual_result} with score {score}")
+                
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Error processing score {score} for {match_name}: {str(e)}")
+                # Mark as Auto-Settled if score parsing fails
+                history_df.at[idx, 'Result'] = 'Auto-Settled'
+                history_df.at[idx, 'Profit'] = -row.get('Stake', 0)
+                history_df.at[idx, 'Score'] = 'N/A'
+        else:
+            # If no score found, mark as Auto-Settled after 3 days (conservative approach)
+            if match_time < current_time - timedelta(days=3):
                 history_df.at[idx, 'Result'] = 'Auto-Settled'
                 history_df.at[idx, 'Profit'] = -row.get('Stake', 0)
                 history_df.at[idx, 'Score'] = 'N/A'
     
+    logger.info(f"Settled {settled_count} bets using Google score lookup")
     return history_df
 
 def get_performance_stats(history_df):
