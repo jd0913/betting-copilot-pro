@@ -1,8 +1,6 @@
 # views.py
-# The "Strict Parlay" Layouts (v71.1 - Score Display & Settlement Fix)
-# FIX: Correctly determines wins/losses using actual scores
-# FIX: Shows final scores prominently in history table
-# FIX: Active bets display properly in Command Center
+# The "Strict Parlay" Layouts (v72.0 - Google Score Lookup)
+# FIX: Updated to use Google score lookup for settlement
 
 import streamlit as st
 import pandas as pd
@@ -357,8 +355,8 @@ def render_history():
         st.info("No betting history yet. Place your first bet to start tracking performance!")
         return
     
-    # Auto-settle past matches that are still marked as pending
-    history_df = utils.settle_bets_with_scores(history_df)
+    # Auto-settle past matches using Google score lookup
+    history_df = utils.settle_bets_with_google_scores(history_df)
     
     # Performance stats
     stats = utils.get_performance_stats(history_df)
@@ -486,7 +484,7 @@ def render_about():
     st.markdown("""
     ## 🚀 Betting Co-Pilot Pro
     
-    **Version 71.1 (Score Display & Settlement Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
+    **Version 72.0 (Google Score Lookup Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
     
     ### 🔍 Core Features
     
@@ -494,13 +492,13 @@ def render_about():
     - **Professional Bankroll Management**: Quarter-Kelly staking with volatility adjustments
     - **Multi-Sport Coverage**: Soccer, NFL, NBA, MLB with specialized models for each
     - **Strict Parlay Builder**: Algorithmically constructed parlays with risk controls
-    - **Score Verification**: All settled bets show final scores for complete transparency
+    - **Google Score Lookup**: All settled bets show final scores from Google search results for complete transparency
     
     ### ⚙️ Technical Stack
     
     - **Engine**: Python, Pandas, Scikit-learn, XGBoost
     - **Frontend**: Streamlit, Plotly
-    - **Data Sources**: The Odds API, football-data.co.uk, NFL Data API
+    - **Data Sources**: The Odds API, football-data.co.uk, Google Score Lookup
     - **Infrastructure**: Streamlit Cloud, GitHub Actions
     
     ### ⚠️ Responsible Gambling
@@ -528,6 +526,6 @@ def render_about():
         **Configuration**:
         - GitHub Repo: `{utils.GITHUB_USERNAME}/{utils.GITHUB_REPO}`
         - Streamlit Cloud: ✅ Connected
-        - Auto-Settlement: ✅ Active
+        - Auto-Settlement: ✅ Active (Google Score Lookup)
         - Score Tracking: ✅ Enabled
         """)
