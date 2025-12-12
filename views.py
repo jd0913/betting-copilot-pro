@@ -1,6 +1,6 @@
 # views.py
-# The "Strict Parlay" Layouts (v72.0 - Google Score Lookup)
-# FIX: Updated to use Google score lookup for settlement
+# The "Strict Parlay" Layouts (v73.0 - Google-only approach)
+# FIX: Removed Streamlit Secrets dependency
 
 import streamlit as st
 import pandas as pd
@@ -484,7 +484,7 @@ def render_about():
     st.markdown("""
     ## 🚀 Betting Co-Pilot Pro
     
-    **Version 72.0 (Google Score Lookup Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
+    **Version 73.0 (Google-Only Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
     
     ### 🔍 Core Features
     
@@ -498,7 +498,7 @@ def render_about():
     
     - **Engine**: Python, Pandas, Scikit-learn, XGBoost
     - **Frontend**: Streamlit, Plotly
-    - **Data Sources**: The Odds API, football-data.co.uk, Google Score Lookup
+    - **Data Sources**: GitHub, Enhanced Google Score Lookup
     - **Infrastructure**: Streamlit Cloud, GitHub Actions
     
     ### ⚠️ Responsible Gambling
@@ -526,6 +526,6 @@ def render_about():
         **Configuration**:
         - GitHub Repo: `{utils.GITHUB_USERNAME}/{utils.GITHUB_REPO}`
         - Streamlit Cloud: ✅ Connected
-        - Auto-Settlement: ✅ Active (Google Score Lookup)
+        - Auto-Settlement: ✅ Active (Enhanced Google Score Lookup)
         - Score Tracking: ✅ Enabled
         """)
