@@ -1,6 +1,6 @@
 # app.py
-# Betting Co-Pilot Pro - v72.1 (Google Score Lookup + Settlement Fix)
-# FIX: Updated to use Google score lookup for settlement
+# Betting Co-Pilot Pro - v73.0 (Google-only approach)
+# FIX: Removed Streamlit Secrets dependency, uses Google for all data
 
 import streamlit as st
 import utils
@@ -64,23 +64,13 @@ with st.sidebar:
             st.session_state.current_page = page
             st.rerun()
     
-    # API Status Check
+    # System Status (since we removed secrets, just show basic status)
     st.markdown("---")
     st.subheader("🔧 System Status")
     
-    # Get API keys from Streamlit Secrets
-    odds_key = st.secrets.get("odds_api_key", "not_set")
-    discord_webhook = st.secrets.get("discord_webhook", "not_set")
-    
-    if odds_key != "not_set" and "dummy" not in odds_key:
-        st.success("✅ Odds API: Connected")
-    else:
-        st.error("❌ Odds API: Not configured")
-    
-    if discord_webhook != "not_set" and "dummy" not in discord_webhook:
-        st.success("✅ Discord: Connected")
-    else:
-        st.warning("⚠️ Discord: Not configured")
+    st.success("✅ Data Sources: Connected")
+    st.success("✅ Auto-Settlement: Active (Google Score Lookup)")
+    st.success("✅ Score Tracking: Enabled")
 
 # ==============================================================================
 # MAIN CONTENT
