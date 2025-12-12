@@ -1,6 +1,6 @@
 # utils.py
-# Updated version with Google score lookup
-# v72.0 - Added Google score scraping functionality
+# Updated version for Google-only approach
+# v73.0 - Removed Streamlit Secrets dependency, uses Google for all data
 
 import streamlit as st
 import pandas as pd
@@ -11,19 +11,15 @@ import logging
 import os
 import time
 from bs4 import BeautifulSoup
+import re
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BettingUtils")
 
-# Configuration (using Streamlit Secrets)
-try:
-    GITHUB_USERNAME = st.secrets["github_username"]
-    GITHUB_REPO = st.secrets["github_repo"]
-except KeyError:
-    # Fallback to defaults if secrets not configured
-    GITHUB_USERNAME = "jd0913"
-    GITHUB_REPO = "betting-copilot-pro"
+# Configuration (using GitHub URLs directly)
+GITHUB_USERNAME = "jd0913"
+GITHUB_REPO = "betting-copilot-pro"
 
 # Fixed URL formatting
 LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
@@ -78,7 +74,7 @@ def load_data(url):
 
 def get_google_score(match_name):
     """
-    Get match score directly from Google search results
+    Get match score directly from Google search results with enhanced parsing
     Args:
         match_name (str): Match name like "Arsenal vs Chelsea"
     Returns:
@@ -112,7 +108,7 @@ def get_google_score(match_name):
             soup.find('span', class_='imso_mh__t1-s'),
             soup.find('span', class_='imso_mh__t2-s'),
             # Generic score containers
-            soup.find('div', string=lambda text: text and ' - ' in text and any(c.isdigit() for c in text)),
+            soup.find('div', string=re.compile(r'\d+\s*[-:]\s*\d+')),
         ]
         
         # Try to extract score from elements
@@ -120,7 +116,6 @@ def get_google_score(match_name):
             if element:
                 score_text = element.get_text().strip()
                 # Look for patterns like "2 - 1", "3:0", "1-0"
-                import re
                 score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', score_text)
                 if score_match:
                     home_score = score_match.group(1)
@@ -132,12 +127,35 @@ def get_google_score(match_name):
         for div in all_divs:
             text = div.get_text().strip()
             if ' - ' in text:
-                import re
                 score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', text)
                 if score_match:
                     home_score = score_match.group(1)
                     away_score = score_match.group(2)
                     return f"{home_score} - {away_score}"
+        
+        # Try different search patterns
+        alternative_queries = [
+            f"{match_name} final score",
+            f"{match_name} result",
+            f"{match_name} live score",
+            f"{match_name} today score"
+        ]
+        
+        for alt_query in alternative_queries:
+            encoded_alt_query = alt_query.replace(' ', '+')
+            alt_url = f"https://www.google.com/search?q={encoded_alt_query}"
+            alt_response = requests.get(alt_url, headers=headers, timeout=10)
+            if alt_response.status_code == 200:
+                alt_soup = BeautifulSoup(alt_response.text, 'html.parser')
+                
+                # Search for scores in alternative results
+                alt_score_elements = alt_soup.find_all(string=re.compile(r'\d+\s*[-:]\s*\d+'))
+                for score_text in alt_score_elements:
+                    score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', score_text)
+                    if score_match:
+                        home_score = score_match.group(1)
+                        away_score = score_match.group(2)
+                        return f"{home_score} - {away_score}"
         
         return None
         
