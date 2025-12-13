@@ -1,7 +1,7 @@
 # backend_runner.py
-# Betting Co-Pilot Pro - v75.0 (Refactored)
-# IMPROVEMENT: Enhanced execution flow, better error handling, aligned with data analysis insights.
-# ANALYSIS INSIGHTS: Addresses scheduling, data freshness, and error resilience.
+# Betting Co-Pilot Pro - v81.0 (Google-Only Backend)
+# FIX: Removed The Odds API and football-data.co.uk dependencies
+# FIX: Integrated Google-based data fetching and settlement
 
 import pandas as pd
 import numpy as np
@@ -11,21 +11,15 @@ from datetime import datetime, timedelta, timezone
 import os
 import requests
 import logging
-from requests.exceptions import RequestException
+import time
+import random
 from pathlib import Path
 
-# ==============================================================================
-# CONFIGURATION & SECURITY SETUP
-# ==============================================================================
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BackendRunner")
-logger.setLevel(logging.INFO)
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
 
-# Never hardcode secrets - use config module with validation
+# Load Discord webhook from config
 DISCORD_WEBHOOK = config.API_CONFIG.get("DISCORD_WEBHOOK", "").strip()
 if not DISCORD_WEBHOOK or "PASTE_YOUR" in DISCORD_WEBHOOK:
     DISCORD_WEBHOOK = None # Disable if invalid
@@ -49,9 +43,6 @@ BET_SCHEMA = {
     'Score': 'string'
 }
 
-# ==============================================================================
-# CORE FUNCTIONS
-# ==============================================================================
 def validate_bet_schema(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure dataframe matches expected schema with proper dtypes"""
     for col, dtype in BET_SCHEMA.items():
@@ -113,7 +104,7 @@ def send_discord_alert(df: pd.DataFrame):
                 msg += bet_line
         
         # Safety: Never expose internal paths/secrets in alerts
-        safe_msg = msg.replace(str(Path.home()), "[USER_HOME]")
+        safe_msg = msg.replace(str(Path.home()), "[USER_HOME]").replace(str(Path.cwd()), "[WORKDIR]")
         
         response = requests.post(
             DISCORD_WEBHOOK,
@@ -123,7 +114,7 @@ def send_discord_alert(df: pd.DataFrame):
         response.raise_for_status()
         logger.info(f"Discord alert sent: {len(safe_msg)} chars")
         
-    except RequestException as e:
+    except requests.exceptions.RequestException as e:
         logger.error(f"Discord alert failed: {str(e)}")
     except Exception as e:
         logger.exception("Unexpected error in Discord alert")
@@ -183,25 +174,22 @@ def save_latest_bets(bets_df: pd.DataFrame):
         logger.exception("Critical failure saving latest bets")
         raise
 
-# ==============================================================================
-# MAIN EXECUTION FLOW
-# ==============================================================================
 def run_backend_analysis():
     """Orchestrates full betting analysis pipeline with error isolation."""
     logger.info("="*60)
-    logger.info("🚀 STARTING DAILY BETTING ANALYSIS PIPELINE")
+    logger.info("🚀 STARTING DAILY BETTING ANALYSIS PIPELINE (Google-Only)")
     logger.info(f"UTC Timestamp: {datetime.now(timezone.utc).isoformat()}")
     
     try:
-        # PHASE 1: Settle existing bets (isolated failure domain)
+        # PHASE 1: Settle existing bets (Google-based)
         try:
-            logger.info("🏁 PHASE 1: SETTLING EXISTING BETS")
+            logger.info("🏁 PHASE 1: SETTLING EXISTING BETS (Google-based)")
             betting_engine.settle_bets()
         except Exception as e:
-            logger.exception("BET SETTLEMENT FAILED - continuing pipeline")
+            logger.exception("BET SETTLEMENT (Google) FAILED - continuing pipeline")
         
-        # PHASE 2: Generate new recommendations (isolated modules)
-        logger.info("🧠 PHASE 2: GENERATING BET RECOMMENDATIONS")
+        # PHASE 2: Generate new recommendations (Google-based)
+        logger.info("🧠 PHASE 2: GENERATING BET RECOMMENDATIONS (Google-based)")
         sport_modules = {
             "Soccer": betting_engine.run_global_soccer_module,
             "NFL": betting_engine.run_nfl_module,
@@ -212,12 +200,23 @@ def run_backend_analysis():
         all_bets = []
         for sport, module_fn in sport_modules.items():
             try:
-                logger.info(f"⚽ Running {sport} module...")
+                logger.info(f"⚽ Running {sport} module (Google-based)...")
+                # Add a small delay between sport modules to be respectful to Google
+                time.sleep(random.uniform(config.GOOGLE_CONFIG["SCRAPE_DELAY_MIN"], config.GOOGLE_CONFIG["SCRAPE_DELAY_MAX"]))
+                
                 bets = module_fn()
-                logger.info(f"✅ {sport}: {len(bets)} bets found")
-                all_bets.append(bets)
+                
+                # Check if the function returned a valid DataFrame
+                if isinstance(bets, pd.DataFrame) and not bets.empty:
+                    logger.info(f"✅ {sport}: {len(bets)} bets found via Google scraping.")
+                    all_bets.append(bets)
+                else:
+                    logger.warning(f"⚠️ {sport}: No bets found or invalid return type from Google scraping.")
+                    
             except Exception as e:
-                logger.exception(f"{sport} MODULE FAILED")
+                logger.exception(f"❌ {sport} MODULE (Google-based) FAILED: {e}")
+                # Continue to the next sport module despite the error
+                time.sleep(random.uniform(config.GOOGLE_CONFIG["SCRAPE_DELAY_MIN"], config.GOOGLE_CONFIG["SCRAPE_DELAY_MAX"]))
         
         # PHASE 3: Consolidate and save results
         logger.info("💾 PHASE 3: SAVING RESULTS")
@@ -229,9 +228,9 @@ def run_backend_analysis():
         # Archive to history (only if we have actual bets)
         if not latest_bets.empty:
             archive_to_history(latest_bets)
-            logger.info(f"🎉 ANALYSIS COMPLETE: {len(latest_bets)} value bets found")
+            logger.info(f"🎉 ANALYSIS COMPLETE: {len(latest_bets)} value bets found via Google")
         else:
-            logger.info("😴 ANALYSIS COMPLETE: No value bets found today")
+            logger.info("😴 ANALYSIS COMPLETE: No value bets found via Google today")
         
         # PHASE 4: Notifications
         logger.info("🔔 PHASE 4: SENDING NOTIFICATIONS")
@@ -249,9 +248,6 @@ def run_backend_analysis():
                 pass
         raise
 
-# ==============================================================================
-# EXECUTION GUARD
-# ==============================================================================
 if __name__ == "__main__":
     try:
         run_backend_analysis()
