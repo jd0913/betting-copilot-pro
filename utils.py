@@ -1,8 +1,7 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v82.1 - REMOVED: Config.py dependency
-# ADDED: Google-based score processing and schema validation (Based on uploaded file structure)
-# NOTE: This version aligns with the Google-only betting_engine.py and backend_runner.py
+# v83.0 (Added missing settlement function)
+# FIX: Added settle_bets_using_google_scores function
 
 import streamlit as st
 import pandas as pd
@@ -27,15 +26,14 @@ GITHUB_REPO = "betting-copilot-pro" # Replace with your actual repo name
 LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
 HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/betting_history.csv"
 
-# Use the schema defined in backend_runner.py
-# We'll define it here locally as it's needed for loading data
+# Define consistent schema
 BET_SCHEMA = {
     'Date': 'datetime64[ns, UTC]',
     'Date_Generated': 'datetime64[ns, UTC]',
     'Sport': 'string',
     'League': 'string',
     'Match': 'string',
-    'Bet_Type': 'string', # Renamed from 'Bet Type' for consistency
+    'Bet_Type': 'string',
     'Bet': 'string',
     'Odds': 'float64',
     'Edge': 'float64',
@@ -52,8 +50,14 @@ def load_data(url):
     """Safely load data from GitHub with proper schema validation"""
     try:
         logger.info(f"Loading data from: {url}")
-        response = requests.get(url, timeout=10) # Use a reasonable timeout
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
+        
+        # Check content type
+        content_type = response.headers.get('Content-Type', '')
+        if 'csv' not in content_type and 'text/plain' not in content_type:
+            logger.warning(f"Unexpected content type: {content_type}")
+            return "FILE_NOT_FOUND"
         
         # Read CSV with proper error handling
         df = pd.read_csv(url)
@@ -61,6 +65,32 @@ def load_data(url):
         if df.empty:
             logger.info("Data file is empty")
             return "NO_BETS_FOUND"
+        
+        # Numeric conversion with error handling
+        numeric_cols = ['Edge', 'Confidence', 'Odds', 'Stake', 'Profit']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+        
+        # Date Formatting with UTC handling
+        if 'Date' in df.columns:
+            try:
+                df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce', utc=True)
+            except:
+                df['Date_Obj'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce', utc=True)
+            
+            df = df[df['Date_Obj'].notna()].copy()
+            df['Formatted_Date'] = df['Date_Obj'].dt.strftime('%a, %b %d • %I:%M %p')
+        else:
+            df['Formatted_Date'] = 'Time TBD'
+            df['Date_Obj'] = pd.NaT
+        
+        # Handle Score column properly
+        if 'Score' in df.columns:
+            df['Score'] = df['Score'].fillna('N/A').astype(str)
+            df['Score'] = df['Score'].apply(lambda x: 'N/A' if x.lower() in ['nan', ''] else x)
+        else:
+            df['Score'] = 'N/A'
         
         # Validate and enforce schema
         df = validate_bet_schema(df)
@@ -107,9 +137,167 @@ def validate_bet_schema(df: pd.DataFrame) -> pd.DataFrame:
     
     return df[list(BET_SCHEMA.keys())] # Enforce column order
 
+def get_google_score(match_name, match_date_str):
+    """
+    Scrape Google for the final score of a match.
+    Args:
+        match_name (str): e.g., "Arsenal vs Chelsea"
+        match_date_str (str): Date in 'YYYY-MM-DD' format
+    Returns:
+        str: Score in format "X - Y" or None if not found or pending.
+    """
+    # Construct search query including date for accuracy
+    search_query = f"{match_name} {match_date_str} score"
+    encoded_query = search_query.replace(' ', '+')
+    url = f"https://www.google.com/search?q={encoded_query}"
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
+    try:
+        logger.info(f"Scraping Google for score: {match_name} ({match_date_str})")
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Look for Google's sports score box or similar structured element
+        score_elements = [
+            soup.find('div', class_='imso_mh__scr-sep'),
+            soup.find('div', class_='imso_mh__s-t'),
+            soup.find('div', class_='imso_mh__s-m'),
+            soup.find('div', class_='imso_mh__s-sc'),
+            soup.find('span', class_='imso_mh__t1-s'),
+            soup.find('span', class_='imso_mh__t2-s'),
+        ]
+        
+        for element in score_elements:
+            if element:
+                score_text = element.get_text().strip()
+                # Look for patterns like "2 - 1", "3:0", "1-0"
+                score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', score_text)
+                if score_match:
+                    home_score = score_match.group(1)
+                    away_score = score_match.group(2)
+                    logger.info(f"   > Google score found: {home_score} - {away_score}")
+                    return f"{home_score} - {away_score}"
+        
+        # If not found in structured elements, search in all divs
+        all_divs = soup.find_all('div')
+        for div in all_divs:
+            text = div.get_text().strip()
+            if ' - ' in text:
+                score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', text)
+                if score_match:
+                    home_score = score_match.group(1)
+                    away_score = score_match.group(2)
+                    logger.info(f"   > Google score found (fallback): {home_score} - {away_score}")
+                    return f"{home_score} - {away_score}"
+        
+        logger.info(f"   > No score found on Google for {match_name} ({match_date_str})")
+        return None
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"   > Network error fetching score from Google for {match_name} ({match_date_str}): {e}")
+        return None
+    except Exception as e:
+        logger.error(f"   > Unexpected error parsing Google score for {match_name} ({match_date_str}): {e}")
+        return None
+
+def determine_match_result(home_score, away_score):
+    """Determine match result based on scores"""
+    if home_score > away_score:
+        return 'Home Win'
+    elif away_score > home_score:
+        return 'Away Win'
+    else:
+        return 'Draw'
+
+# --- CRITICAL: MISSING FUNCTION ADDED ---
+def settle_bets_using_google_scores(history_df):
+    """
+    Auto-settle bets using Google score lookup for past matches.
+    This function is called by views.py.
+    """
+    if not isinstance(history_df, pd.DataFrame) or history_df.empty:
+        return history_df
+    
+    current_time = datetime.now(timezone.utc)
+    settled_count = 0
+    
+    # Create a copy to avoid SettingWithCopyWarning
+    df = history_df.copy()
+    
+    for idx, row in df.iterrows():
+        try:
+            # Get match details
+            match_date = pd.to_datetime(row['Date_Obj'], utc=True)
+            match_name = row['Match']
+            predicted_bet = row['Bet']
+            current_result = row.get('Result', 'Pending')
+            current_score = row.get('Score', 'N/A')
+            
+            # Skip if already properly settled
+            if current_result in ['Win', 'Loss', 'Push'] and current_score != 'N/A' and current_score != 'nan':
+                continue
+            
+            # Only settle matches that are at least 2 hours old (to ensure scores are posted)
+            if match_date < current_time - timedelta(hours=2):
+                # Fetch score from Google
+                score_str = get_google_score(match_name, match_date.strftime('%Y-%m-%d'))
+                
+                if score_str and ' - ' in score_str:
+                    try:
+                        home_score_str, away_score_str = score_str.split(' - ')
+                        home_score = int(home_score_str.strip())
+                        away_score = int(away_score_str.strip())
+                        
+                        # Determine actual result
+                        actual_result = determine_match_result(home_score, away_score)
+                        
+                        # Determine if bet won
+                        if (predicted_bet == 'Home Win' and actual_result == 'Home Win') or \
+                           (predicted_bet == 'Away Win' and actual_result == 'Away Win') or \
+                           (predicted_bet == 'Draw' and actual_result == 'Draw'):
+                            df.at[idx, 'Result'] = 'Win'
+                            df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
+                        else:
+                            df.at[idx, 'Result'] = 'Loss'
+                            df.at[idx, 'Profit'] = -row['Stake']
+                        
+                        df.at[idx, 'Score'] = score_str
+                        settled_count += 1
+                        logger.info(f"   > Settled bet for {match_name} as {actual_result} with score {score_str}")
+                        
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"   > Error processing Google score '{score_str}' for {match_name}: {str(e)}")
+                        # Mark as Auto-Settled if score parsing fails
+                        df.at[idx, 'Result'] = 'Auto-Settled'
+                        df.at[idx, 'Profit'] = -row.get('Stake', 0)
+                        df.at[idx, 'Score'] = 'N/A (Parse Error)'
+                        settled_count += 1
+                        
+                else:
+                    # If no score found after 3 days, mark as Auto-Settled
+                    if match_date < current_time - timedelta(days=3):
+                        df.at[idx, 'Result'] = 'Auto-Settled'
+                        df.at[idx, 'Profit'] = -row.get('Stake', 0)
+                        df.at[idx, 'Score'] = 'N/A (Score Not Found)'
+                        settled_count += 1
+                        logger.info(f"   > Auto-settled (score not found) bet for {match_name} ({match_date.date()})")
+            
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning(f"   > Error processing row {idx} for settlement: {str(e)}")
+            continue # Skip problematic rows
+    
+    if settled_count > 0:
+        logger.info(f"   > Google-based settlement complete. {settled_count} bets settled.")
+    
+    return df
+
 def get_performance_stats(history_df):
     """Calculates live performance metrics from history with safety checks"""
-    if not isinstance(history_df, pd.DataFrame) or history_df.empty:
+    if not isinstance(history_df, pd.DataFrame):
         return {"win_rate": 0.0, "roi": 0.0, "total_bets": 0, "sport_stats": {}}
     
     # Filter only settled bets with valid results
@@ -173,6 +361,87 @@ def inject_custom_css():
         h1, h2, h3, h4, h5, h6 {
             color: white;
             font-weight: 700;
+        }
+        
+        /* Dataframe styling */
+        .dataframe {
+            background-color: #1a1c23 !important;
+            border-radius: 12px !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: #e0e0e0 !important;
+        }
+        .dataframe th {
+            background-color: #1e2130 !important;
+            color: #8b92a5 !important;
+            font-weight: 600 !important;
+            text-align: center !important;
+        }
+        .dataframe td {
+            text-align: center !important;
+            background-color: #16181d !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+        }
+        .dataframe tr:hover {
+            background-color: rgba(0, 201, 255, 0.05) !important;
+        }
+        
+        /* Card styling */
+        .bet-card {
+            background: linear-gradient(145deg, #1a1c23, #16181d);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 18px;
+            margin-bottom: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .bet-card:hover {
+            transform: translateY(-3px);
+            border-color: #00C9FF;
+            box-shadow: 0 6px 12px rgba(0, 201, 255, 0.15);
+        }
+        
+        /* Odds box styling */
+        .odds-box {
+            background: linear-gradient(90deg, #1a1c23, #1e2230);
+            color: #00e676;
+            font-weight: 700;
+            font-size: 1.2em;
+            padding: 10px 18px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid rgba(0, 230, 118, 0.3);
+            margin: 8px 0;
+        }
+        
+        /* Badge styling */
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 0.75em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 2px 5px 2px 0;
+        }
+        .badge-arb {
+            background: linear-gradient(90deg, #00C9FF, #92FE9D);
+            color: #000;
+            border: none;
+        }
+        .badge-high {
+            background: linear-gradient(90deg, #ff4d4d, #ff8c8c);
+            color: white;
+        }
+        .badge-safe {
+            background: linear-gradient(90deg, #00e676, #4dffbd);
+            color: #000;
+        }
+        .badge-std {
+            background: rgba(49, 51, 63, 0.8);
+            color: #aaa;
+            border: 1px solid #444;
         }
         
         /* Clean result badges */
@@ -344,176 +613,42 @@ def get_risk_badge(row):
         bet_type = row.get('Bet_Type', row.get('Bet Type', ''))
         
         if bet_type == 'ARBITRAGE':
-            return '<span class="badge badge-arb">💎 ARB</span>'
+            return '💎 ARB'
         if odds > 3.5 and edge > 0.15:
-            return '<span class="badge badge-high">⚡ HIGH</span>'
+            return '⚡ HIGH'
         if conf > 0.60 and edge > 0.07:
-            return '<span class="badge badge-safe">⭐ VALUE</span>'
+            return '⭐ VALUE'
         if edge > 0.02:
-            return '<span class="badge badge-std">EDGE</span>'
-        return '<span class="badge badge-std">STANDARD</span>'
+            return 'EDGE'
+        return 'STANDARD'
     except (ValueError, TypeError):
-        return '<span class="badge badge-std">N/A</span>'
+        return 'N/A'
 
-def format_result_badge(result):
-    """Format result badge with proper HTML escaping"""
-    if not result or pd.isna(result):
-        return '<span class="res-pending">❓ UNKNOWN</span>'
-    
-    result = str(result).strip()
-    if result.lower() in ['win', 'won']:
-        return '<span class="res-win">✅ WIN</span>'
-    elif result.lower() in ['loss', 'lost', 'auto-settled']:
-        return '<span class="res-loss">❌ LOSS</span>' # Or use res-auto-settled for auto-settled
-    elif result.lower() in ['push', 'tie']:
-        return '<span class="res-push">→ PUSH</span>'
-    elif result.lower() in ['pending', 'open', '']:
-        return '<span class="res-pending">⏳ PENDING</span>'
+def format_edge_text(edge):
+    """Format edge percentage with proper coloring and text"""
+    if edge > 0.1:
+        return f"🔥 {edge:.1%}"
+    elif edge > 0.05:
+        return f"🎯 {edge:.1%}"
+    elif edge > 0.02:
+        return f"✅ {edge:.1%}"
     else:
-        return f'<span class="res-pending">{result.upper()}</span>'
+        return f"{edge:.1%}"
 
-def format_currency(value):
-    """Format numbers as currency with proper signs"""
-    if pd.isna(value) or abs(value) < 0.01:
-        return "$0.00"
-    sign = "+" if value > 0 else "-"
-    return f"{sign}${abs(value):,.2f}"
-
-def get_bet_status_color(result):
-    """Return color codes for different bet statuses"""
-    result = str(result).lower()
-    if 'win' in result:
-        return "#69f0ae", "#00c853"  # Green colors
-    elif 'loss' in result or 'auto-settled' in result:
-        return "#ff8a80", "#ff1744"  # Red colors
-    elif 'push' in result:
-        return "#bdbdbd", "#757575"  # Gray colors
-    else:
-        return "#ffcc80", "#ffa000"  # Amber colors for pending
-
-# --- GOOGLE-ONLY SPECIFIC FUNCTIONS (Added for alignment with betting_engine.py) ---
-def get_score_from_google(match_name, match_date_str):
-    """
-    Scrape Google for the final score of a match.
-    Args:
-        match_name (str): e.g., "Arsenal vs Chelsea"
-        match_date_str (str): Date in 'YYYY-MM-DD' format
-    Returns:
-        tuple: (home_score, away_score) or (None, None) if not found or pending.
-    """
-    # Construct search query including date for accuracy
-    search_query = f"{match_name} {match_date_str} score"
-    encoded_query = search_query.replace(' ', '+')
-    url = f"https://www.google.com/search?q={encoded_query}"
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    
+def is_active_bet(row):
+    """Determine if a bet is for a future match (active)"""
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Look for Google's sports score box or similar structured element
-        # Common classes for Google sports scores (these might change over time):
-        score_element = (
-            soup.find('div', class_='imso_mh__scr-sep') or
-            soup.find('div', class_='imso_mh__s-t') or
-            soup.find('div', class_='imso_mh__s-m') or
-            soup.find('div', class_='imso_mh__s-sc') or
-            soup.find('span', class_='imso_mh__t1-s') or
-            soup.find('span', class_='imso_mh__t2-s')
-        )
-        
-        if score_element:
-            score_text = score_element.get_text().strip()
-            # Look for patterns like "2 - 1", "3:0", "1-0"
-            score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', score_text)
-            if score_match:
-                home_score = int(score_match.group(1))
-                away_score = int(score_match.group(2))
-                print(f"   > Google score found for {match_name} ({match_date_str}): {home_score} - {away_score}")
-                return home_score, away_score
-        
-        # If not found in structured elements, search in all divs/text
-        all_divs = soup.find_all('div')
-        for div in all_divs:
-             text = div.get_text().strip()
-             if ' - ' in text or ':' in text:
-                 score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', text)
-                 if score_match:
-                     home_score = int(score_match.group(1))
-                     away_score = int(score_match.group(2))
-                     print(f"   > Google score found (fallback) for {match_name} ({match_date_str}): {home_score} - {away_score}")
-                     return home_score, away_score
-        
-        print(f"   > No score found on Google for {match_name} ({match_date_str})")
-        return None, None
-            
-    except requests.exceptions.RequestException as e:
-        logger.error(f"   > Error fetching score from Google for {match_name} ({match_date_str}): {e}")
-        return None, None
-    except Exception as e:
-        logger.error(f"   > Unexpected error parsing Google score for {match_name} ({match_date_str}): {e}")
-        return None, None
-
-def scrape_google_scores(date_str, league="", limit=10):
-    """
-    Scrape Google for historical scores for a specific date and optionally league.
-    Args:
-        date_str (str): Date in 'YYYY-MM-DD' format
-        league (str): Optional league name to narrow search
-        limit (int): Max number of matches to return
-    Returns:
-        list: List of dictionaries [{'Match': 'Team1 vs Team2', 'Score': 'X-Y', 'League': '...'}, ...]
-    """
-    search_query = f"{date_str} {league} scores"
-    encoded_query = search_query.replace(' ', '+')
-    url = f"https://www.google.com/search?q={encoded_query}"
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    
-    try:
-        logger.info(f"Scraping Google for scores: {date_str}, League: {league}")
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Find score containers (depends on Google's layout)
-        score_containers = soup.find_all('div', class_=lambda x: x and ('imso_mh' in x.lower() or 'score' in x.lower()))
-        
-        scores = []
-        for container in score_containers:
-            # Extract match info and score
-            home_team_elem = container.find(class_=lambda x: x and 'imso_mh__tm-txt' in x) # First team found
-            score_elem = container.find(class_=lambda x: x and ('imso_mh__scr-sep' in x or 'imso_mh__s-t' in x))
-            away_team_elem = container.find_all(class_=lambda x: x and 'imso_mh__tm-txt' in x)[-1] if len(container.find_all(class_=lambda x: x and 'imso_mh__tm-txt' in x)) > 1 else None
-            
-            if home_team_elem and away_team_elem and score_elem:
-                match_name = f"{home_team_elem.get_text(strip=True)} vs {away_team_elem.get_text(strip=True)}"
-                score = score_elem.get_text(strip=True)
-                scores.append({'Match': match_name, 'Score': score, 'League': league, 'Date': date_str})
-                
-                if len(scores) >= limit:
-                    break
-        
-        logger.info(f"Found {len(scores)} scores from Google for {date_str}.")
-        return scores
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Network error scraping scores for {date_str}: {e}")
-        return []
-    except Exception as e:
-        logger.error(f"Unexpected error parsing scores for {date_str}: {e}")
-        return []
+        current_time = datetime.now(timezone.utc)
+        match_time = pd.to_datetime(row['Date_Obj'], utc=True)
+        # Consider matches in last 2 hours as still active/ongoing
+        return match_time > current_time - timedelta(hours=2)
+    except (ValueError, TypeError):
+        return True # Default to active if date parsing fails
 
 def format_result_with_score(result, score):
-    """Format result with score information for display (compatible with views.py)"""
+    """Format result with score information for display"""
     # Handle missing or invalid scores
-    if not isinstance(score, str) or score == 'N/A' or score.lower() == 'nan':
+    if not isinstance(score, str) or score in ['N/A', 'nan', 'NaN', '']:
         if result in ['Win', 'Loss', 'Push', 'Auto-Settled']:
             return f'<span class="res-{result.lower()}">{result.upper()}</span>'
         return '<span class="res-pending">⏳ PENDING</span>'
@@ -526,6 +661,13 @@ def format_result_with_score(result, score):
     elif result == 'Push':
         return f'<span class="res-push">⚖️ PUSH ({score})</span>'
     elif result == 'Auto-Settled':
-        return f'<span class="res-loss">🔄 AUTO-SETTLED ({score})</span>'
+        return f'<span class="res-auto-settled">🔄 AUTO-SETTLED ({score})</span>'
     else:
         return f'<span class="res-pending">{result.upper()} ({score})</span>'
+
+def format_currency(value):
+    """Format numbers as currency with proper signs"""
+    if pd.isna(value) or abs(value) < 0.01:
+        return "$0.00"
+    sign = "+" if value > 0 else "-"
+    return f"{sign}${abs(value):,.2f}"
