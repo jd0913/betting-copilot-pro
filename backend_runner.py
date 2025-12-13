@@ -1,15 +1,14 @@
 # backend_runner.py
-# Betting Co-Pilot Pro - v81.0 (Google-Only Backend)
-# FIX: Removed The Odds API and football-data.co.uk dependencies
+# Betting Co-Pilot Pro - v82.0 (Google-Only Backend - NO Config)
+# FIX: Removed all config.py dependencies
 # FIX: Integrated Google-based data fetching and settlement
 
 import pandas as pd
 import numpy as np
-import betting_engine
-import config
+import betting_engine # This module now handles all Google scraping
+import requests
 from datetime import datetime, timedelta, timezone
 import os
-import requests
 import logging
 import time
 import random
@@ -19,10 +18,20 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BackendRunner")
 
-# Load Discord webhook from config
-DISCORD_WEBHOOK = config.API_CONFIG.get("DISCORD_WEBHOOK", "").strip()
+# --- HARDCODED PARAMETERS (Replaces config.py) ---
+# Discord webhook - set this in your environment variables or Streamlit secrets
+# Example for local dev: os.environ["DISCORD_WEBHOOK"] = "your_webhook_url"
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "") # Or get from Streamlit secrets if deployed
 if not DISCORD_WEBHOOK or "PASTE_YOUR" in DISCORD_WEBHOOK:
-    DISCORD_WEBHOOK = None # Disable if invalid
+    DISCORD_WEBHOOK = None # Disable if not set or invalid
+    logger.warning("Discord webhook not configured via environment variable.")
+
+# Google scraping parameters
+GOOGLE_SCRAPE_DELAY_MIN = 1
+GOOGLE_SCRAPE_DELAY_MAX = 3
+GOOGLE_REQUEST_TIMEOUT = 15
+GOOGLE_MAX_RETRIES = 2
+GOOGLE_SEARCH_LIMIT_PER_DAY = 100
 
 # Define consistent schema (avoids Streamlit crashes on missing columns)
 BET_SCHEMA = {
@@ -74,15 +83,15 @@ def validate_bet_schema(df: pd.DataFrame) -> pd.DataFrame:
 def send_discord_alert(df: pd.DataFrame):
     """Send formatted alert with safety checks."""
     if not DISCORD_WEBHOOK:
-        logger.info("Discord alerts disabled - no valid webhook")
+        logger.info("Discord alerts disabled - no webhook configured.")
         return
 
     try:
         if df.empty or len(df[df['Edge'] > 0.05]) == 0:
-            msg = "🤖 **Betting Co-Pilot**\nNo high-value bets today. Markets look efficient."
+            msg = "🤖 **Betting Co-Pilot**\nNo high-value bets found via Google scraping today. Markets look efficient."
         else:
             top_bets = df[df['Edge'] > 0.05].nlargest(5, 'Edge')
-            msg = "🚀 **Betting Co-Pilot - Top Value Bets**\n"
+            msg = "🚀 **Betting Co-Pilot - Top Value Bets (Google)**\n"
             
             for _, row in top_bets.iterrows():
                 sport_icon = {
@@ -177,24 +186,24 @@ def save_latest_bets(bets_df: pd.DataFrame):
 def run_backend_analysis():
     """Orchestrates full betting analysis pipeline with error isolation."""
     logger.info("="*60)
-    logger.info("🚀 STARTING DAILY BETTING ANALYSIS PIPELINE (Google-Only)")
+    logger.info("🚀 STARTING DAILY BETTING ANALYSIS PIPELINE (Google-Only, No Config)")
     logger.info(f"UTC Timestamp: {datetime.now(timezone.utc).isoformat()}")
     
     try:
-        # PHASE 1: Settle existing bets (Google-based)
+        # PHASE 1: Settle existing bets (Google-based - relies on betting_engine)
         try:
             logger.info("🏁 PHASE 1: SETTLING EXISTING BETS (Google-based)")
-            betting_engine.settle_bets()
+            betting_engine.settle_bets() # This calls the Google-based function in betting_engine.py
         except Exception as e:
             logger.exception("BET SETTLEMENT (Google) FAILED - continuing pipeline")
         
-        # PHASE 2: Generate new recommendations (Google-based)
+        # PHASE 2: Generate new recommendations (Google-based - relies on betting_engine)
         logger.info("🧠 PHASE 2: GENERATING BET RECOMMENDATIONS (Google-based)")
         sport_modules = {
-            "Soccer": betting_engine.run_global_soccer_module,
-            "NFL": betting_engine.run_nfl_module,
-            "NBA": betting_engine.run_nba_module,
-            "MLB": betting_engine.run_mlb_module
+            "Soccer": betting_engine.run_global_soccer_module, # Updated module in betting_engine.py
+            "NFL": betting_engine.run_nfl_module, # Placeholder/updated module in betting_engine.py
+            "NBA": betting_engine.run_nba_module, # Placeholder/updated module in betting_engine.py
+            "MLB": betting_engine.run_mlb_module  # Placeholder/updated module in betting_engine.py
         }
         
         all_bets = []
@@ -202,9 +211,9 @@ def run_backend_analysis():
             try:
                 logger.info(f"⚽ Running {sport} module (Google-based)...")
                 # Add a small delay between sport modules to be respectful to Google
-                time.sleep(random.uniform(config.GOOGLE_CONFIG["SCRAPE_DELAY_MIN"], config.GOOGLE_CONFIG["SCRAPE_DELAY_MAX"]))
+                time.sleep(random.uniform(GOOGLE_SCRAPE_DELAY_MIN, GOOGLE_SCRAPE_DELAY_MAX))
                 
-                bets = module_fn()
+                bets = module_fn() # Calls the Google-dependent function in betting_engine.py
                 
                 # Check if the function returned a valid DataFrame
                 if isinstance(bets, pd.DataFrame) and not bets.empty:
@@ -216,7 +225,7 @@ def run_backend_analysis():
             except Exception as e:
                 logger.exception(f"❌ {sport} MODULE (Google-based) FAILED: {e}")
                 # Continue to the next sport module despite the error
-                time.sleep(random.uniform(config.GOOGLE_CONFIG["SCRAPE_DELAY_MIN"], config.GOOGLE_CONFIG["SCRAPE_DELAY_MAX"]))
+                time.sleep(random.uniform(GOOGLE_SCRAPE_DELAY_MIN, GOOGLE_SCRAPE_DELAY_MAX))
         
         # PHASE 3: Consolidate and save results
         logger.info("💾 PHASE 3: SAVING RESULTS")
