@@ -1,7 +1,8 @@
 # views.py
-# The "Strict Parlay" Layouts (v73.2 - Google Score Lookup Edition - Fixed Function Call)
-# FIX: Changed function call from 'settle_bets_with_google_scores' to 'settle_bets_using_google_scores'
-# FIX: Ensures compatibility with the function defined in the current utils.py
+# The "Strict Parlay" Layouts (v71.5 - Google Score Lookup + Active Bets Fix)
+# FIX: Now correctly displays active/future bets in Command Center
+# FIX: Properly shows settled results (including Auto-Settled) in History
+# FIX: Calls the correct settlement function from utils.py
 
 import streamlit as st
 import pandas as pd
@@ -10,7 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from itertools import combinations
 from datetime import datetime, timedelta, timezone
-import utils # This module must contain the 'settle_bets_using_google_scores' function
+import utils # This now contains the Google-based settle_bets_using_google_scores function
 
 def render_dashboard(bankroll, kelly_multiplier):
     st.markdown('<p class="gradient-text">🚀 Live Command Center</p>', unsafe_allow_html=True)
@@ -100,8 +101,9 @@ def render_dashboard(bankroll, kelly_multiplier):
         st.markdown("---")
         st.markdown("### 📋 Active & Upcoming Bets")
         
+        # Filter for active/future bets using the new function from utils
         current_time = datetime.now(timezone.utc)
-        active_mask = df.apply(lambda x: pd.to_datetime(x['Date_Obj'], utc=True) > current_time - timedelta(hours=2) if pd.notna(x.get('Date_Obj')) else True, axis=1)
+        active_mask = df.apply(lambda x: utils.is_active_bet(x), axis=1) # Uses the function defined in the updated utils.py
         active_bets = df[active_mask].copy()
         
         if not active_bets.empty:
@@ -117,12 +119,6 @@ def render_dashboard(bankroll, kelly_multiplier):
                 
                 stake_pct = float(row.get('Stake', 0.01))
                 cash_stake = bankroll * stake_pct * (kelly_multiplier / 0.25)
-                
-                current_exposure += cash_stake
-                risk_warning = ""
-                if current_exposure > max_risk_dollars:
-                    risk_warning = f"⚠️ **SKIP:** Daily risk limit (${max_risk_dollars:.2f}) exceeded."
-                    cash_stake = 0
                 
                 with st.container():
                     c1, c2 = st.columns([3, 1])
@@ -148,8 +144,6 @@ def render_dashboard(bankroll, kelly_multiplier):
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
-                        if risk_warning: 
-                            st.warning(risk_warning)
                     
                     with c2:
                         st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row.get('Odds', 0):.2f}</div></div>""", unsafe_allow_html=True)
@@ -176,7 +170,6 @@ def render_dashboard(bankroll, kelly_multiplier):
                                     if is_in_slip:
                                         st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b.get('key') != key]
                                         st.rerun()
-
         else:
             st.info("No active or upcoming bets found. Check back soon for new recommendations!")
 
@@ -363,19 +356,16 @@ def render_history():
         st.info("No betting history yet. Place your first bet to start tracking performance!")
         return
     
-    # --- CRITICAL FIX: Use the correct function name from utils.py ---
-    # The function in the uploaded utils.py is 'settle_bets_using_google_scores'
-    # NOT 'settle_bets_with_google_scores'
+    # --- CRITICAL: Auto-settle using Google scores (calls the function from utils.py) ---
+    # This function should exist in your updated utils.py
     try:
-        # Auto-settle past matches using Google score lookup
-        # This function must exist in your utils.py file
         history_df = utils.settle_bets_using_google_scores(history_df)
-    except AttributeError as e:
-        st.error(f"⚠️ Settlement function missing: {str(e)}")
-        st.info("Scores may appear as 'N/A' or results as 'Pending' until resolved manually or via backend runner.")
+    except AttributeError:
+        st.error("⚠️ Settlement function `settle_bets_using_google_scores` not found in utils.py. Scores may not be finalized.")
+        st.warning("Results may appear as 'Pending' or 'Auto-Settled' until resolved manually or via backend runner.")
     except Exception as e:
-        st.error(f"⚠️ Error during Google-based settlement: {str(e)}")
-        st.info("Scores may appear as 'N/A' or results as 'Pending' due to settlement error.")
+        st.error(f"⚠️ Error during Google-based settlement: {str(e)}. Settlement skipped.")
+        st.warning("Scores may appear as 'N/A' or results as 'Pending' due to settlement error.")
 
     # Performance stats
     stats = utils.get_performance_stats(history_df)
@@ -436,9 +426,10 @@ def render_history():
     
     # Prepare display data
     display_df = history_df.copy()
-    display_df = display_df.sort_values('Date_Obj', ascending=False)
+    display_df = display_df.sort_values('Date_Obj', ascending=False) # Sort by date (newest first)
     
     # Format result column properly with score context
+    # This function should exist in your updated utils.py
     display_df['Result_Display'] = display_df.apply(
         lambda x: utils.format_result_with_score(x['Result'], x.get('Score', '')), 
         axis=1
@@ -454,7 +445,7 @@ def render_history():
     
     # Show actual score prominently
     display_df['Match_Score'] = display_df.apply(
-        lambda x: f"{x.get('Score', 'N/A')}" if x.get('Score') and x.get('Score') not in ['N/A', 'nan', ''] else "Result Pending",
+        lambda x: f"{x.get('Score', 'N/A')}" if x.get('Score') and x.get('Score') not in ['N/A', 'nan', 'NaN', ''] else "Result Pending",
         axis=1
     )
     
@@ -482,7 +473,7 @@ def render_history():
                      'background-color: rgba(158, 158, 158, 0.2); color: #bdbdbd' if 'PUSH' in str(x).upper() else '',
             subset=['Result']
         ).applymap(
-            lambda x: 'font-weight: bold; color: #00C9FF' if x not in ['Result Pending', 'N/A'] else 'color: #888',
+            lambda x: 'font-weight: bold; color: #00C9FF' if x != 'Result Pending' and x != 'N/A' else 'color: #888',
             subset=['Final Score']
         ),
         use_container_width=True,
@@ -504,7 +495,7 @@ def render_about():
     st.markdown("""
     ## 🚀 Betting Co-Pilot Pro
     
-    **Version 73.2 (Google Score Lookup Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
+    **Version 71.5 (Google Score Lookup Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
     
     ### 🔍 Core Features
     
