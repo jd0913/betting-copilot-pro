@@ -1,6 +1,6 @@
 # views.py
-# The "Strict Parlay" Layouts (v73.0 - Google Score Lookup Edition)
-# FIX: Updated to use Google score lookup for settlement
+# The "Strict Parlay" Layouts (v73.1 - Google Score Lookup Edition - Error Handled)
+# FIX: Added graceful handling for missing settle_bets_with_google_scores function
 # FIX: Properly displays settled results, including Auto-Settled
 
 import streamlit as st
@@ -96,92 +96,81 @@ def render_dashboard(bankroll, kelly_multiplier):
             else:
                 st.info("No smart picks available.")
 
-        # --- MAIN FEED ---
+        # --- MAIN FEED (Only Active/Future Bets) ---
         st.markdown("---")
         st.markdown("### 📋 Active & Upcoming Bets")
         
-        current_exposure = 0.0
-        if not df.empty and 'Match' in df.columns and 'Bet' in df.columns:
-            df['key'] = df['Match'] + "_" + df['Bet']
-
-        for i, row in df.iterrows():
-            # Only show active/upcoming bets in the main feed
-            try:
-                match_time = pd.to_datetime(row['Date_Obj'], utc=True)
-                current_time = datetime.now(timezone.utc)
-                if match_time < current_time - timedelta(hours=2): # Skip past matches
-                    continue
-            except (ValueError, TypeError):
-                continue # Skip if date parsing fails
-
-            sport_icon = utils.get_team_emoji(row.get('Sport', 'Soccer'))
-            match_time = row.get('Formatted_Date', 'Time TBD')
-            risk_badge = utils.get_risk_badge(row)
-            bookie = row.get('Info', 'Best Price')
-            if pd.isna(bookie) or bookie == "": 
-                bookie = "Best Price"
+        current_time = datetime.now(timezone.utc)
+        active_mask = df.apply(lambda x: pd.to_datetime(x['Date_Obj'], utc=True) > current_time - timedelta(hours=2) if pd.notna(x.get('Date_Obj')) else True, axis=1)
+        active_bets = df[active_mask].copy()
+        
+        if not active_bets.empty:
+            st.metric("🎯 Active Bets", len(active_bets))
             
-            stake_pct = float(row.get('Stake', 0.01))
-            cash_stake = bankroll * stake_pct * (kelly_multiplier / 0.25)
-            
-            current_exposure += cash_stake
-            risk_warning = ""
-            if current_exposure > max_risk_dollars:
-                risk_warning = f"⚠️ **SKIP:** Daily risk limit (${max_risk_dollars:.2f}) exceeded."
-                cash_stake = 0
-            
-            with st.container():
-                c1, c2 = st.columns([3, 1])
-                with c1:
-                    st.markdown(f"""
-                    <div class="bet-card">
-                        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                            <span style="color:#8b92a5; font-size:0.8em;">{match_time} • {row.get('League', 'League')}</span>
-                            {risk_badge}
-                        </div>
-                        <div style="font-size:1.3em; font-weight:700; margin-bottom:5px;">
-                            {sport_icon} {row.get('Match', 'Unknown Match')}
-                        </div>
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <span style="color:#00C9FF; font-weight:600;">{row.get('Bet', 'Unknown Bet')}</span>
-                            <span style="color:#555;">|</span>
-                            <span style="color:#8b92a5; font-size:0.9em;">{bookie}</span>
-                        </div>
-                        <div style="margin-top:15px; display:flex; gap:20px;">
-                            <div><div style="font-size:0.7em; color:#888;">EDGE</div><div style="font-weight:bold; color:#00e676;">{row.get('Edge', 0):.1%}</div></div>
-                            <div><div style="font-size:0.7em; color:#888;">CONF</div><div style="font-weight:bold;">{row.get('Confidence', 0):.1%}</div></div>
-                            <div><div style="font-size:0.7em; color:#888;">STAKE</div><div style="font-weight:bold;">${cash_stake:.2f}</div></div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    if risk_warning: 
-                        st.warning(risk_warning)
+            for i, row in active_bets.iterrows():
+                sport_icon = utils.get_team_emoji(row.get('Sport', 'Soccer'))
+                match_time = row.get('Formatted_Date', 'Time TBD')
+                risk_badge = utils.get_risk_badge(row)
+                bookie = row.get('Info', 'Best Price')
+                if pd.isna(bookie) or bookie == "": 
+                    bookie = "Best Price"
                 
-                with c2:
-                    st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row.get('Odds', 0):.2f}</div></div>""", unsafe_allow_html=True)
+                stake_pct = float(row.get('Stake', 0.01))
+                cash_stake = bankroll * stake_pct * (kelly_multiplier / 0.25)
+                
+                with st.container():
+                    c1, c2 = st.columns([3, 1])
+                    with c1:
+                        st.markdown(f"""
+                        <div class="bet-card">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                <span style="color:#8b92a5; font-size:0.8em;">{match_time} • {row.get('League', 'League')}</span>
+                                {risk_badge}
+                            </div>
+                            <div style="font-size:1.3em; font-weight:700; margin-bottom:5px;">
+                                {sport_icon} {row.get('Match', 'Unknown Match')}
+                            </div>
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <span style="color:#00C9FF; font-weight:600;">{row.get('Bet', 'Unknown Bet')}</span>
+                                <span style="color:#555;">|</span>
+                                <span style="color:#8b92a5; font-size:0.9em;">{bookie}</span>
+                            </div>
+                            <div style="margin-top:15px; display:flex; gap:20px;">
+                                <div><div style="font-size:0.7em; color:#888;">EDGE</div><div style="font-weight:bold; color:#00e676;">{row.get('Edge', 0):.1%}</div></div>
+                                <div><div style="font-size:0.7em; color:#888;">CONF</div><div style="font-weight:bold;">{row.get('Confidence', 0):.1%}</div></div>
+                                <div><div style="font-size:0.7em; color:#888;">STAKE</div><div style="font-weight:bold;">${cash_stake:.2f}</div></div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
                     
-                    with st.expander("✏️ Edit"):
-                        if 'key' in row:
-                            key = row['key']
-                            is_in_slip = any(b.get('key') == key for b in st.session_state.bet_slip)
-                            user_stake = st.number_input(
-                                "Stake Amount ($)", 
-                                min_value=0.0, 
-                                value=float(cash_stake), 
-                                step=1.0, 
-                                key=f"stake_{key}"
-                            )
-                            
-                            if st.checkbox("Add to Slip", value=is_in_slip, key=f"add_{key}"):
-                                if not is_in_slip:
-                                    row_data = row.to_dict()
-                                    row_data['User_Stake'] = user_stake
-                                    st.session_state.bet_slip.append(row_data)
-                                    st.rerun()
-                            else:
-                                if is_in_slip:
-                                    st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b.get('key') != key]
-                                    st.rerun()
+                    with c2:
+                        st.markdown(f"""<div style="height:100%; display:flex; align-items:center; justify-content:center;"><div class="odds-box">{row.get('Odds', 0):.2f}</div></div>""", unsafe_allow_html=True)
+                        
+                        with st.expander("✏️ Edit"):
+                            if 'key' in row:
+                                key = row['key']
+                                is_in_slip = any(b.get('key') == key for b in st.session_state.bet_slip)
+                                user_stake = st.number_input(
+                                    "Stake Amount ($)", 
+                                    min_value=0.0, 
+                                    value=float(cash_stake), 
+                                    step=1.0, 
+                                    key=f"stake_{key}"
+                                )
+                                
+                                if st.checkbox("Add to Slip", value=is_in_slip, key=f"add_{key}"):
+                                    if not is_in_slip:
+                                        row_data = row.to_dict()
+                                        row_data['User_Stake'] = user_stake
+                                        st.session_state.bet_slip.append(row_data)
+                                        st.rerun()
+                                else:
+                                    if is_in_slip:
+                                        st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b.get('key') != key]
+                                        st.rerun()
+
+        else:
+            st.info("No active or upcoming bets found. Check back soon for new recommendations!")
 
         # --- STRICT PARLAY BUILDER ---
         st.markdown("---")
@@ -366,10 +355,24 @@ def render_history():
         st.info("No betting history yet. Place your first bet to start tracking performance!")
         return
     
-    # Auto-settle past matches using Google score lookup
-    # This line was causing the error. It now calls the function expected to be in utils.py
-    history_df = utils.settle_bets_with_google_scores(history_df) # Ensure this function exists in your utils.py
-    
+    # --- CRITICAL FIX: Check if settlement function exists before calling ---
+    if hasattr(utils, 'settle_bets_with_google_scores'):
+        try:
+            # Auto-settle past matches using Google score lookup
+            history_df = utils.settle_bets_with_google_scores(history_df)
+        except Exception as e:
+            st.error(f"⚠️ Error during Google-based settlement: {str(e)}. Settlement skipped.")
+            st.warning("Scores may appear as 'N/A' or results as 'Pending' until resolved manually or via backend runner.")
+    else:
+        st.warning("⚠️ Google score settlement function not found in utils.py. Scores may not be finalized.")
+        st.info("Please ensure your utils.py file contains the `settle_bets_with_google_scores` function.")
+        # Optionally, try a different settlement function if available
+        # if hasattr(utils, 'settle_bets'):
+        #     try:
+        #         history_df = utils.settle_bets(history_df)
+        #     except:
+        #         pass
+
     # Performance stats
     stats = utils.get_performance_stats(history_df)
     sport_stats = stats.get('sport_stats', {})
@@ -432,10 +435,32 @@ def render_history():
     display_df = display_df.sort_values('Date_Obj', ascending=False)
     
     # Format result column properly with score context
-    display_df['Result_Display'] = display_df.apply(
-        lambda x: utils.format_result_with_score(x['Result'], x.get('Score', '')), 
-        axis=1
-    )
+    # Use the function from utils if available, otherwise use a local fallback
+    if hasattr(utils, 'format_result_with_score'):
+        display_df['Result_Display'] = display_df.apply(
+            lambda x: utils.format_result_with_score(x['Result'], x.get('Score', '')), axis=1
+        )
+    else:
+        # Local fallback formatting if function is missing
+        def local_format_result_with_score(result, score):
+            if not isinstance(score, str) or score in ['N/A', 'nan', '', 'NaN']:
+                if result in ['Win', 'Loss', 'Push', 'Auto-Settled']:
+                    return f'<span class="res-{result.lower()}">{result.upper()}</span>'
+                return '<span class="res-pending">⏳ PENDING</span>'
+            if result == 'Win':
+                return f'<span class="res-win">✅ WIN ({score})</span>'
+            elif result == 'Loss':
+                return f'<span class="res-loss">❌ LOSS ({score})</span>'
+            elif result == 'Push':
+                return f'<span class="res-push">⚖️ PUSH ({score})</span>'
+            elif result == 'Auto-Settled':
+                return f'<span class="res-loss">🔄 AUTO-SETTLED ({score})</span>'
+            else:
+                return f'<span class="res-pending">{result.upper()} ({score})</span>'
+        
+        display_df['Result_Display'] = display_df.apply(
+            lambda x: local_format_result_with_score(x['Result'], x.get('Score', '')), axis=1
+        )
     
     # Format profit column
     display_df['Profit_Display'] = display_df.apply(
@@ -447,7 +472,7 @@ def render_history():
     
     # Show actual score prominently
     display_df['Match_Score'] = display_df.apply(
-        lambda x: f"{x.get('Score', 'N/A')}" if x.get('Score') and x.get('Score') != 'N/A' else "Result Pending",
+        lambda x: f"{x.get('Score', 'N/A')}" if x.get('Score') and x.get('Score') not in ['N/A', 'nan', '', 'NaN'] else "Result Pending",
         axis=1
     )
     
@@ -498,7 +523,7 @@ def render_about():
     st.markdown("""
     ## 🚀 Betting Co-Pilot Pro
     
-    **Version 73.0 (Google Score Lookup Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
+    **Version 73.1 (Google Score Lookup Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
     
     ### 🔍 Core Features
     
@@ -512,7 +537,7 @@ def render_about():
     
     - **Engine**: Python, Pandas, Scikit-learn, XGBoost
     - **Frontend**: Streamlit, Plotly
-    - **Data Sources**: The Odds API, football-data.co.uk, Enhanced Google Score Lookup
+    - **Data Sources**: The Odds API, Enhanced Google Score Lookup
     - **Infrastructure**: Streamlit Cloud, GitHub Actions
     
     ### ⚠️ Responsible Gambling
@@ -540,6 +565,6 @@ def render_about():
         **Configuration**:
         - GitHub Repo: `{utils.GITHUB_USERNAME}/{utils.GITHUB_REPO}`
         - Streamlit Cloud: ✅ Connected
-        - Auto-Settlement: ✅ Active (Enhanced Google Score Lookup)
-        - Score Tracking: ✅ Enabled
+        - Auto-Settlement: {'✅ Active (Google Score Lookup)' if hasattr(utils, 'settle_bets_with_google_scores') else '⚠️ Inactive (Function Missing)'}
+        - Score Tracking: {'✅ Enabled' if hasattr(utils, 'format_result_with_score') else '⚠️ Disabled (Function Missing)'}
         """)
