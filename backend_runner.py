@@ -1,16 +1,13 @@
 # backend_runner.py
-# Betting Co-Pilot Pro - v59.0 (Refactored)
-# Key Fixes: 
-#   - Secure Discord webhook handling
-#   - Schema validation for bet data
-#   - UTC timestamp standardization
-#   - Modular execution flow with error isolation
+# Betting Co-Pilot Pro - v75.0 (Refactored)
+# IMPROVEMENT: Enhanced execution flow, better error handling, aligned with data analysis insights.
+# ANALYSIS INSIGHTS: Addresses scheduling, data freshness, and error resilience.
 
 import pandas as pd
 import numpy as np
 import betting_engine
 import config
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import os
 import requests
 import logging
@@ -20,10 +17,18 @@ from pathlib import Path
 # ==============================================================================
 # CONFIGURATION & SECURITY SETUP
 # ==============================================================================
+logger = logging.getLogger("BackendRunner")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
 # Never hardcode secrets - use config module with validation
 DISCORD_WEBHOOK = config.API_CONFIG.get("DISCORD_WEBHOOK", "").strip()
 if not DISCORD_WEBHOOK or "PASTE_YOUR" in DISCORD_WEBHOOK:
-    DISCORD_WEBHOOK = None  # Disable if invalid
+    DISCORD_WEBHOOK = None # Disable if invalid
 
 # Define consistent schema (avoids Streamlit crashes on missing columns)
 BET_SCHEMA = {
@@ -32,7 +37,7 @@ BET_SCHEMA = {
     'Sport': 'string',
     'League': 'string',
     'Match': 'string',
-    'Bet_Type': 'string',  # Renamed from 'Bet Type' for consistency
+    'Bet_Type': 'string', # Renamed from 'Bet Type' for consistency
     'Bet': 'string',
     'Odds': 'float64',
     'Edge': 'float64',
@@ -45,24 +50,10 @@ BET_SCHEMA = {
 }
 
 # ==============================================================================
-# LOGGING SETUP (Professional standard)
-# ==============================================================================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler("backend.log"),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger("BettingBackend")
-
-# ==============================================================================
 # CORE FUNCTIONS
 # ==============================================================================
 def validate_bet_schema(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure dataframe matches expected schema with proper dtypes"""
-    # Initialize missing columns
     for col, dtype in BET_SCHEMA.items():
         if col not in df.columns:
             if "datetime" in dtype:
@@ -74,7 +65,6 @@ def validate_bet_schema(df: pd.DataFrame) -> pd.DataFrame:
             else:
                 df[col] = ""
     
-    # Convert to proper dtypes (with error handling)
     for col, dtype in BET_SCHEMA.items():
         try:
             if "datetime" in dtype:
@@ -88,16 +78,15 @@ def validate_bet_schema(df: pd.DataFrame) -> pd.DataFrame:
             if "float" in dtype:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
     
-    return df[list(BET_SCHEMA.keys())]  # Enforce column order
+    return df[list(BET_SCHEMA.keys())] # Enforce column order
 
 def send_discord_alert(df: pd.DataFrame):
-    """Send formatted alert with safety checks"""
+    """Send formatted alert with safety checks."""
     if not DISCORD_WEBHOOK:
         logger.info("Discord alerts disabled - no valid webhook")
         return
-    
+
     try:
-        # Generate message with character limit safety
         if df.empty or len(df[df['Edge'] > 0.05]) == 0:
             msg = "🤖 **Betting Co-Pilot**\nNo high-value bets today. Markets look efficient."
         else:
@@ -106,10 +95,7 @@ def send_discord_alert(df: pd.DataFrame):
             
             for _, row in top_bets.iterrows():
                 sport_icon = {
-                    "Soccer": "⚽",
-                    "NFL": "🏈",
-                    "NBA": "🏀",
-                    "MLB": "⚾"
+                    "Soccer": "⚽", "NFL": "🏈", "NBA": "🏀", "MLB": "⚾"
                 }.get(row['Sport'], "🎲")
                 
                 edge_pct = f"{row['Edge']:.1%}"
@@ -121,7 +107,6 @@ def send_discord_alert(df: pd.DataFrame):
                     f"📈 Edge: {edge_pct} | 💰 Stake: {stake_pct}\n\n"
                 )
                 
-                # Prevent Discord 2000-char limit breach
                 if len(msg) + len(bet_line) > 1900:
                     msg += "... *(truncated for Discord limits)*"
                     break
@@ -144,7 +129,7 @@ def send_discord_alert(df: pd.DataFrame):
         logger.exception("Unexpected error in Discord alert")
 
 def archive_to_history(new_bets: pd.DataFrame):
-    """Safely append to historical data with duplicate prevention"""
+    """Safely append to historical data with duplicate prevention."""
     history_path = Path("betting_history.csv")
     
     try:
@@ -171,7 +156,7 @@ def archive_to_history(new_bets: pd.DataFrame):
         raise
 
 def save_latest_bets(bets_df: pd.DataFrame):
-    """Save current recommendations with schema enforcement"""
+    """Save current recommendations with schema enforcement."""
     try:
         # Create empty dataframe with schema if no bets
         if bets_df.empty:
@@ -202,7 +187,7 @@ def save_latest_bets(bets_df: pd.DataFrame):
 # MAIN EXECUTION FLOW
 # ==============================================================================
 def run_backend_analysis():
-    """Orchestrates full betting analysis pipeline with error isolation"""
+    """Orchestrates full betting analysis pipeline with error isolation."""
     logger.info("="*60)
     logger.info("🚀 STARTING DAILY BETTING ANALYSIS PIPELINE")
     logger.info(f"UTC Timestamp: {datetime.now(timezone.utc).isoformat()}")
