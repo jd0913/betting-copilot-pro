@@ -1,8 +1,8 @@
 # betting_engine.py
 # The Core Logic: AI Models, Google Data Fetching, Settlement, Feature Engineering
-# v80.0 - REMOVAL: The Odds API & football-data.co.uk dependencies
-# IMPLEMENTATION: Dynamic Google scraping for live odds, historical scores, and settlements
-# FEATURES: Live data, Smart scraping, Dynamic adaptation, AI-driven analysis
+# v72.0 (Google-Only Edition - No Config Dependency)
+# FIX: Removed import config and replaced with hardcoded values/env vars
+# FIX: Integrated Google score lookup for settlement
 
 import pandas as pd
 import numpy as np
@@ -12,10 +12,12 @@ from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score, cross_val_predict
 from scipy.stats import poisson
 import joblib
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 import time
 from datetime import datetime, timedelta, timezone
@@ -23,72 +25,59 @@ import os
 import json
 import random
 from fuzzywuzzy import process
+from textblob import TextBlob
 import logging
-import config
-from urllib.parse import quote_plus
+import re # Added for score parsing
 
-# Setup logging
+# ==============================================================================
+# LOGGING SETUP (Professional standard)
+# ==============================================================================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BettingEngine")
 
 # ==============================================================================
-# SECURE API SESSION (With retries and timeouts for Google)
+# SECURE API SESSION (With retries and timeouts)
 # ==============================================================================
 def create_api_session():
-    """Create resilient session for Google scraping"""
+    """Create resilient session with retry logic"""
     session = requests.Session()
-    # Google is sensitive to bots, so we'll use lighter retry logic
-    from requests.adapters import HTTPAdapter
-    from urllib3.util.retry import Retry
     retries = Retry(
-        total=2,  # Lower retries for Google
-        backoff_factor=1.0,
+        total=3,
+        backoff_factor=0.5,
         status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"]
+        allowed_methods=["GET", "POST"]
     )
-    adapter = HTTPAdapter(max_retries=retries)
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
+    session.mount("https://", HTTPAdapter(max_retries=retries))
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "BettingCoPilot-Pro/1.0 (Contact: your@email.com)",
+        "Accept": "application/json"
     })
     return session
 
 API_SESSION = create_api_session()
 
 # ==============================================================================
-# 1. SMART MATH MODULES (Preserved)
+# CORE MATH MODULES (Preserved)
 # ==============================================================================
 def calculate_pythagorean_expectation(points_for, points_against, exponent=1.83):
     if points_for == 0 and points_against == 0: return 0.5
-    if points_for < 0 or points_against < 0: return 0.5
-    numerator = points_for ** exponent
-    denominator = numerator + (points_against ** exponent)
-    return numerator / denominator if denominator > 0 else 0.5
+    return (points_for ** exponent) / ((points_for ** exponent) + (points_against ** exponent))
 
 def zero_inflated_poisson(k, lam, pi=0.05):
-    if lam <= 0 or pi < 0 or pi > 1:
-        logger.warning(f"Invalid ZI Poisson params: k={k}, lam={lam}, pi={pi}")
-        return poisson.pmf(k, max(lam, 0.1))
     if k == 0:
         return pi + (1 - pi) * poisson.pmf(0, lam)
-    return (1 - pi) * poisson.pmf(k, lam)
+    else:
+        return (1 - pi) * poisson.pmf(k, lam)
 
 # ==============================================================================
-# 2. GENETIC AI & MODELS (Preserved, Adapted for Google Data)
+# GENETIC AI & MODELS (Preserved)
 # ==============================================================================
 GENOME_FILE = 'model_genome.json'
 
 def load_or_initialize_genome():
     if os.path.exists(GENOME_FILE):
-        try:
-            with open(GENOME_FILE, 'r') as f: return json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
-            logger.error("Genome file corrupted, initializing new one.")
-    return {
-        'generation': 0, 'best_score': 10.0, 'xgb_n_estimators': 200, 'xgb_max_depth': 3, 'xgb_learning_rate': 0.1,
-        'rf_n_estimators': 200, 'rf_max_depth': 10, 'nn_hidden_layer_size': 64, 'nn_alpha': 0.0001
-    }
+        with open(GENOME_FILE, 'r') as f: return json.load(f)
+    return {'generation': 0, 'best_score': 10.0, 'xgb_n_estimators': 200, 'xgb_max_depth': 3, 'xgb_learning_rate': 0.1, 'rf_n_estimators': 200, 'rf_max_depth': 10, 'nn_hidden_layer_size': 64, 'nn_alpha': 0.0001}
 
 def mutate_genome(genome):
     mutant = genome.copy(); mutation_rate = 0.3
@@ -99,10 +88,10 @@ def mutate_genome(genome):
     return mutant
 
 def build_ensemble_from_genome(genome):
-    xgb_clf = xgb.XGBClassifier(objective='multi:softprob', eval_metric='mlogloss', use_label_encoder=False, n_estimators=int(genome['xgb_n_estimators']), max_depth=int(genome['xgb_max_depth']), learning_rate=genome['xgb_learning_rate'], random_state=42, n_jobs=-1, tree_method='hist')
+    xgb_clf = xgb.XGBClassifier(objective='multi:softprob', eval_metric='mlogloss', use_label_encoder=False, n_estimators=int(genome['xgb_n_estimators']), max_depth=int(genome['xgb_max_depth']), learning_rate=genome['xgb_learning_rate'], random_state=42, n_jobs=-1)
     rf_clf = RandomForestClassifier(n_estimators=int(genome['rf_n_estimators']), max_depth=int(genome['rf_max_depth']), random_state=42, n_jobs=-1)
-    nn_clf = MLPClassifier(hidden_layer_sizes=(int(genome['nn_hidden_layer_size']), int(genome['nn_hidden_layer_size'] // 2)), alpha=genome['nn_alpha'], activation='relu', solver='adam', max_iter=500, random_state=42, early_stopping=True)
-    lr_clf = LogisticRegression(multi_class='multinomial', solver='lbfgs', max_iter=1000, random_state=42)
+    nn_clf = MLPClassifier(hidden_layer_sizes=(int(genome['nn_hidden_layer_size']), int(genome['nn_hidden_layer_size'] // 2)), alpha=genome['nn_alpha'], activation='relu', solver='adam', max_iter=500, random_state=42)
+    lr_clf = LogisticRegression(multi_class='multinomial', solver='lbfgs', max_iter=1000)
     return VotingClassifier(estimators=[('xgb', xgb_clf), ('rf', rf_clf), ('nn', nn_clf), ('lr', lr_clf)], voting='soft', n_jobs=-1)
 
 def train_meta_model(X, y, primary_model):
@@ -113,7 +102,7 @@ def train_meta_model(X, y, primary_model):
         meta_clf.fit(X, meta_y)
         return meta_clf
     except Exception as e:
-        logger.error(f"Error training meta-model: {e}")
+        print(f"Error training meta-model: {e}")
         return None
 
 def evolve_and_train(X, y):
@@ -125,6 +114,7 @@ def evolve_and_train(X, y):
     if mutant_fitness < champ_fitness:
         print("      > 🚀 EVOLUTION! Mutant wins.")
         mutant_genome['best_score'] = mutant_fitness; mutant_genome['generation'] = current_genome['generation'] + 1; winner_genome = mutant_genome
+        with open(GENOME_FILE, 'w') as f: json.dump(winner_genome, f)
     else:
         print("      > 💀 Champion remains.")
         winner_genome = current_genome
@@ -133,320 +123,390 @@ def evolve_and_train(X, y):
     meta_model = train_meta_model(X, y, final_model)
     calibrated_model = CalibratedClassifierCV(final_model, method='isotonic', cv=3)
     calibrated_model.fit(X, y)
-    # Save genome
-    with open(GENOME_FILE, 'w') as f: json.dump(winner_genome, f, indent=2)
     return calibrated_model, meta_model
 
 # ==============================================================================
-# 3. GOOGLE DATA FETCHING & PROCESSING (NEW CORE)
+# DATA FETCHING & ARBITRAGE (Updated for Google-Only)
 # ==============================================================================
-def scrape_google_odds(match_name, sport_type="Soccer"):
+# HARDCODED GITHUB CREDENTIALS (Replaces config.GITHUB_CONFIG)
+GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "jd0913") # Use env var or default
+GITHUB_REPO = os.getenv("GITHUB_REPO", "betting-copilot-pro") # Use env var or default
+
+# Fixed URL formatting
+LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
+HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/betting_history.csv"
+
+def get_live_odds(sport_key):
+    # REMOVED: The Odds API integration - no longer needed
+    # This function is now a placeholder as live odds are fetched via Google scraping
+    logger.info(f"Live odds for {sport_key} would be fetched via Google scraping in the future.")
+    return []
+
+def find_arbitrage(game, sport_type):
+    # REMOVED: The Odds API arb logic - no longer needed
+    # This function is now a placeholder as arb is found via Google scraping
+    return 0, None, {'price': 0, 'book': ''}, {'price': 0, 'book': ''}, {'price': 0, 'book': ''}
+
+def fuzzy_match_team(team_name, team_list):
+    if not team_list: return None
+    match, score = process.extractOne(team_name, team_list)
+    if score >= 80: return match
+    return None
+
+def get_news_alert(team1, team2):
+    # Kept the news alert functionality - uses Google search
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        query = f'"{team1}" OR "{team2}" injury OR doubt OR out'
+        url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbm=nws"
+        res = requests.get(url, headers=headers)
+        res.raise_for_status() 
+        soup = BeautifulSoup(res.text, 'html.parser')
+        headlines = soup.find_all('div', {'role': 'heading'})
+        for h in headlines[:3]:
+            if any(keyword in h.text.lower() for keyword in ['injury', 'doubt', 'out', 'miss', 'sidelined']):
+                return f"⚠️ News: {h.text}"
+    except requests.exceptions.RequestException as e: 
+        print(f"Error scraping news for {team1}/{team2}: {e}")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred during news parsing: {e}")
+        return None
+    return None
+
+# ==============================================================================
+# GOOGLE SCORE LOOKUP FOR SETTLEMENT (NEW CORE FUNCTION)
+# ==============================================================================
+
+def get_google_score(match_name, match_date_str):
     """
-    Scrape Google for live odds for a specific match.
+    Scrape Google for the final score of a match.
     Args:
         match_name (str): e.g., "Arsenal vs Chelsea"
-        sport_type (str): Used for refining search query if needed
+        match_date_str (str): Date in 'YYYY-MM-DD' format
     Returns:
-        dict: {'Home Win': odds, 'Draw': odds, 'Away Win': odds} or empty dict if not found
+        str: Score in format "X - Y" or None if not found.
     """
-    search_query = f"{match_name} {sport_type} odds"
-    encoded_query = quote_plus(search_query)
+    # Construct search query including date for accuracy
+    search_query = f"{match_name} {match_date_str} score"
+    encoded_query = search_query.replace(' ', '+')
     url = f"https://www.google.com/search?q={encoded_query}"
     
-    headers = API_SESSION.headers.copy() # Use our configured session headers
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
     
     try:
-        logger.info(f"Scraping Google for odds: {match_name}")
-        response = API_SESSION.get(url, headers=headers, timeout=15)
+        logger.info(f"Scraping Google for score: {match_name} ({match_date_str})")
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Look for Google's sports odds structure (classes may change frequently)
-        # This is the most fragile part - requires frequent updates to selectors
-        # Common Google sports elements for odds
-        odds_elements = soup.find_all(class_=lambda x: x and ('odds' in x.lower() or 'oddsboard' in x.lower() or 'imso_mh' in x.lower()))
+        # Look for Google's sports score box or similar structured element
+        score_elements = [
+            soup.find('div', class_='imso_mh__scr-sep'),
+            soup.find('div', class_='imso_mh__s-t'),
+            soup.find('div', class_='imso_mh__s-m'),
+            soup.find('div', class_='imso_mh__s-sc'),
+            soup.find('span', class_='imso_mh__t1-s'),
+            soup.find('span', class_='imso_mh__t2-s'),
+        ]
         
-        # Heuristic: Look for numbers in the right format near team names or generic odds labels
-        text_content = soup.get_text()
-        # Pattern: number followed by separator (- or :) followed by another number, e.g., "2 - 1", "3:0"
-        score_pattern = r'(\d+)\s*[-:]\s*(\d+)'
-        score_match = re.search(score_pattern, text_content)
-        if score_match:
-             # This might be the actual score, not odds. Be careful.
-             # Odds are usually decimals like 2.10, 3.50, etc.
-             pass
+        for element in score_elements:
+            if element:
+                score_text = element.get_text().strip()
+                # Look for patterns like "2 - 1", "3:0", "1-0"
+                score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', score_text)
+                if score_match:
+                    home_score = score_match.group(1)
+                    away_score = score_match.group(2)
+                    logger.info(f"   > Google score found: {home_score} - {away_score}")
+                    return f"{home_score} - {away_score}"
         
-        # Look for decimal numbers that look like odds (usually > 1.0 and < 20.0)
-        odds_pattern = r'\b\d+\.\d{2}\b'
-        potential_odds = re.findall(odds_pattern, text_content)
-        potential_odds = [float(o) for o in potential_odds if 1.0 < float(o) < 20.0] # Filter realistic odds
+        # If not found in structured elements, search in all divs
+        all_divs = soup.find_all('div')
+        for div in all_divs:
+            text = div.get_text().strip()
+            if ' - ' in text:
+                score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)', text)
+                if score_match:
+                    home_score = score_match.group(1)
+                    away_score = score_match.group(2)
+                    logger.info(f"   > Google score found (fallback): {home_score} - {away_score}")
+                    return f"{home_score} - {away_score}"
         
-        # This is highly heuristic. We assume Google might list odds like [Home, Draw, Away] or [Home, Away] for 2-way sports
-        # We need to associate these numbers with outcomes.
-        # For now, let's just return the first 3 unique odds found, assuming they are H, D, A (for 3-way sports)
-        # This is a MAJOR limitation of pure scraping without structured data.
-        if len(potential_odds) >= 3:
-            unique_odds = list(dict.fromkeys(potential_odds))[:3] # Remove duplicates, keep first 3
-            if sport_type.lower() in ['soccer', 'football']:
-                return {'Home Win': unique_odds[0], 'Draw': unique_odds[1], 'Away Win': unique_odds[2]}
-            elif sport_type.lower() in ['nfl', 'nba', 'mlb']: # 2-way sport
-                 return {'Home Win': unique_odds[0], 'Away Win': unique_odds[1]} # Ignore 3rd if present or treat as spread
-        
-        # Alternative: Look for specific text indicating odds
-        # Example: "Odds: Arsenal 2.10 Draw 3.50 Chelsea 3.20"
-        # This requires very specific parsing based on how the text is laid out.
-        # Google's layout is complex and constantly changing.
-        # This is why APIs are preferred.
-        
-        # Placeholder for more complex parsing logic if needed in the future
-        # Look for common bookmaker names near potential odds
-        # Look for specific Google sports data attributes (e.g., data-attr-odds)
-        # Inspect the actual HTML structure returned by Google for your specific query.
-        
-        logger.info(f"No clear odds structure found for {match_name} on Google.")
-        return {}
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Network error scraping odds for {match_name}: {e}")
-        return {}
-    except Exception as e:
-        logger.error(f"Unexpected error parsing odds for {match_name}: {e}")
-        return {}
-
-def scrape_google_scores(date_str, league="", limit=10):
-    """
-    Scrape Google for historical scores for a specific date and optionally league.
-    Args:
-        date_str (str): Date in 'YYYY-MM-DD' format
-        league (str): Optional league name to narrow search
-        limit (int): Max number of matches to return
-    Returns:
-        list: List of dictionaries [{'Match': 'Team1 vs Team2', 'Score': 'X-Y', 'League': '...'}, ...]
-    """
-    search_query = f"{date_str} {league} scores"
-    encoded_query = quote_plus(search_query)
-    url = f"https://www.google.com/search?q={encoded_query}"
-    
-    headers = API_SESSION.headers.copy()
-    
-    try:
-        logger.info(f"Scraping Google for scores: {date_str}, League: {league}")
-        response = API_SESSION.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Find score containers (again, fragile, depends on Google's layout)
-        score_containers = soup.find_all('div', class_=lambda x: x and ('imso_mh' in x.lower() or 'score' in x.lower()))
-        
-        scores = []
-        for container in score_containers:
-            # Extract match info and score
-            # Example structure (may vary):
-            # <div class="imso_mh__mv"> <div class="imso_mh__tm-txt">HomeTeam</div> <div class="imso_mh__scr-sep">1 - 0</div> <div class="imso_mh__tm-txt">AwayTeam</div> </div>
-            home_team_elem = container.find(class_=lambda x: x and 'imso_mh__tm-txt' in x) # First team found
-            score_elem = container.find(class_=lambda x: x and 'imso_mh__scr-sep' in x) or container.find(class_=lambda x: x and 'imso_mh__s-t' in x)
-            away_team_elem = container.find_all(class_=lambda x: x and 'imso_mh__tm-txt' in x)[-1] if len(container.find_all(class_=lambda x: x and 'imso_mh__tm-txt' in x)) > 1 else None
+        logger.info(f"   > No score found on Google for {match_name} ({match_date_str})")
+        return None
             
-            if home_team_elem and away_team_elem and score_elem:
-                match_name = f"{home_team_elem.get_text(strip=True)} vs {away_team_elem.get_text(strip=True)}"
-                score = score_elem.get_text(strip=True)
-                scores.append({'Match': match_name, 'Score': score, 'League': league, 'Date': date_str})
-                
-                if len(scores) >= limit:
-                    break
-        
-        logger.info(f"Found {len(scores)} scores from Google for {date_str}.")
-        return scores
-        
     except requests.exceptions.RequestException as e:
-        logger.error(f"Network error scraping scores for {date_str}: {e}")
-        return []
+        logger.error(f"   > Network error fetching score from Google for {match_name} ({match_date_str}): {e}")
+        return None
     except Exception as e:
-        logger.error(f"Unexpected error parsing scores for {date_str}: {e}")
-        return []
+        logger.error(f"   > Unexpected error parsing Google score for {match_name} ({match_date_str}): {e}")
+        return None
 
-# ==============================================================================
-# 4. DYNAMIC SOCCER MODULE (Powered by Google)
-# ==============================================================================
-def run_global_soccer_module():
-    """
-    Generates bets using Google for live odds and historical data.
-    This is a simplified version focusing on fetching data and basic processing.
-    """
-    print("--- Running Global Soccer Module (Google-Powered) ---")
-    bets = []
-    
-    # Example: Fetch live odds for a specific upcoming match (you'd need a way to get upcoming matches first)
-    # For demonstration, let's assume we have a list of matches to check.
-    # In reality, you might scrape a site for schedules or use a simple predefined list.
-    # Let's say we get today's date and search for matches happening today.
-    today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    # Search for today's matches (this is also scraping-dependent)
-    # We'll simulate getting a match name from somewhere else for now.
-    # A more robust system would have a separate function to scrape schedules.
-    # Placeholder: Assume we have a match name
-    simulated_match_name = "Generic Team A vs Generic Team B" 
-    
-    # Fetch live odds from Google
-    odds_dict = scrape_google_odds(simulated_match_name, "Soccer")
-    if odds_dict:
-        print(f"   > Odds found for {simulated_match_name}: {odds_dict}")
-        # Example: Perform basic arbitrage check (requires 3 odds for H, D, A)
-        if 'Home Win' in odds_dict and 'Draw' in odds_dict and 'Away Win' in odds_dict:
-            h_odds, d_odds, a_odds = odds_dict['Home Win'], odds_dict['Draw'], odds_dict['Away Win']
-            implied_prob = (1/h_odds) + (1/d_odds) + (1/a_odds)
-            if implied_prob < 0.99: # 1% margin for error
-                profit = (1 - implied_prob) / implied_prob
-                bets.append({
-                    'Date': datetime.now(timezone.utc).isoformat(), # Use current time or scheduled time if available
-                    'Sport': 'Soccer',
-                    'League': 'Simulated/Google',
-                    'Match': simulated_match_name,
-                    'Bet_Type': 'ARBITRAGE',
-                    'Bet': 'ALL',
-                    'Odds': 1 / (1 - profit), # Recalculate fair odds
-                    'Edge': profit,
-                    'Confidence': 1.0, # Arbitrage is risk-free theoretically
-                    'Stake': 0.0, # Needs calculation
-                    'Info': f"Google Arb: {h_odds:.2f}, {d_odds:.2f}, {a_odds:.2f}"
-                })
-                logger.info(f"   > Arbitrage opportunity found via Google: {simulated_match_name}")
-        
-        # Example: Use odds for model-based betting (requires historical data for training)
-        # Since we removed football-data.co.uk, we need an alternative for historical data.
-        # Option 1: Scrape historical results from Google for each team over the last N days/weeks
-        # This is complex and slow but possible.
-        # Option 2: Use a different free/paid API if available.
-        # Option 3: Use the live odds and basic team info scraped from Google to create features.
-        # For this example, let's assume we have a way to get minimal historical context via Google.
-        # This is where the model training part becomes tricky without a dedicated historical data source.
-        # Let's focus on the settlement and live odds aspects for now.
-    
-    # For now, return what we have (likely empty or with arb if found)
-    # The core functionality of generating *value* bets based on historical model training is significantly impacted
-    # by the removal of the historical data API. The settlement part (below) is where Google shines.
-    return pd.DataFrame(bets)
+def determine_match_result(home_score, away_score):
+    """Determine match result based on scores"""
+    if home_score > away_score:
+        return 'Home Win'
+    elif away_score > home_score:
+        return 'Away Win'
+    else:
+        return 'Draw'
 
+def settle_soccer_bets(df):
+    """
+    Settle soccer bets using Google score lookup.
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return df
 
-# ==============================================================================
-# 5. DYNAMIC SETTLEMENT ENGINE (Powered by Google)
-# ==============================================================================
-def settle_bets():
-    """
-    Settle bets by fetching scores from Google.
-    """
-    print("--- ⚖️ Running Google-Based Settlement Engine ---")
-    history_file = 'betting_history.csv'
-    if not os.path.exists(history_file): 
-        logger.info("No history file found for settlement.")
-        return
-    
-    df = pd.read_csv(history_file)
-    if 'Result' not in df.columns: df['Result'] = 'Pending'
-    if 'Profit' not in df.columns: df['Profit'] = 0.0
-    if 'Score' not in df.columns: df['Score'] = ''
-    
-    # Filter for pending bets that are old enough to be settled (e.g., > 2 hours after match time)
     current_time = datetime.now(timezone.utc)
-    pending_mask = (df['Result'] == 'Pending') & (df['Sport'] == 'Soccer') # Add other sports if needed
+    settled_count = 0
     
-    for idx, row in df[pending_mask].iterrows():
-        match_name = row['Match']
-        # Assume 'Date' in the history file is the match start time in ISO format
-        try:
-            match_time = pd.to_datetime(row['Date'], utc=True)
-        except:
-            logger.warning(f"Could not parse date for row {idx}, skipping settlement.")
+    # Create a copy to avoid SettingWithCopyWarning
+    df_copy = df.copy()
+    
+    for idx, row in df_copy.iterrows():
+        # Skip if already properly settled
+        if row.get('Result') in ['Win', 'Loss', 'Push'] and row.get('Score') and row.get('Score') != 'N/A' and row.get('Score') != 'nan':
             continue
             
-        # Only settle if match is old enough
-        if match_time > current_time - timedelta(hours=2):
-            continue # Skip recent matches
+        # Get match details
+        try:
+            match_time = pd.to_datetime(row['Date_Obj'], utc=True)
+        except (ValueError, TypeError):
+            continue # Skip if date parsing fails
+            
+        match_name = row['Match']
+        predicted_bet = row['Bet']
+        current_result = row.get('Result', 'Pending')
+        current_score = row.get('Score', 'N/A')
         
-        # Determine the date to search for scores (match date)
-        match_date_str = match_time.strftime('%Y-%m-%d')
+        # Only process matches that occurred before Dec 8, 2025 @ 10pm UTC
+        settlement_deadline = datetime(2025, 12, 8, 22, 0, 0, tzinfo=timezone.utc)
+        if match_time > settlement_deadline:
+            continue # Skip future matches or recent ones needing time to settle
         
-        # Scrape Google for the final score of this specific match and date
-        # This is the core of the Google settlement.
-        # We need to search for the exact match on the specific date.
-        scores_found = scrape_google_scores(match_date_str, league=row.get('League', ''), limit=50) # Search broadly for the date
-        
-        # Find the specific match in the results
-        match_result = None
-        for score_entry in scores_found:
-            if match_name.lower() in score_entry['Match'].lower(): # Fuzzy match
-                match_result = score_entry
-                break
-        
-        if match_result:
-            score_str = match_result['Score']
-            # Parse the score string (e.g., "2 - 1", "3:0")
-            score_parts = re.split(r'[-:]', score_str)
-            if len(score_parts) == 2:
+        # If match is old enough, try to get score from Google
+        if match_time < current_time - timedelta(hours=2): # At least 2 hours old
+            score_str = get_google_score(match_name, match_time.strftime('%Y-%m-%d'))
+            
+            if score_str and ' - ' in score_str:
                 try:
-                    home_score = int(score_parts[0].strip())
-                    away_score = int(score_parts[1].strip())
+                    home_score_str, away_score_str = score_str.split(' - ')
+                    home_score = int(home_score_str.strip())
+                    away_score = int(away_score_str.strip())
                     
-                    # Determine the actual result
-                    if home_score > away_score:
-                        actual_result = 'Home Win'
-                    elif away_score > home_score:
-                        actual_result = 'Away Win'
-                    else: # home_score == away_score
-                        actual_result = 'Draw'
+                    # Determine actual outcome
+                    actual_result = determine_match_result(home_score, away_score)
                     
-                    # Determine if the bet was won
-                    bet_outcome = row['Bet']
-                    if (bet_outcome == 'Home Win' and actual_result == 'Home Win') or \
-                       (bet_outcome == 'Away Win' and actual_result == 'Away Win') or \
-                       (bet_outcome == 'Draw' and actual_result == 'Draw'):
-                        df.loc[idx, 'Result'] = 'Win'
-                        df.loc[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
+                    # Determine if bet won
+                    if (predicted_bet == 'Home Win' and actual_result == 'Home Win') or \
+                       (predicted_bet == 'Away Win' and actual_result == 'Away Win') or \
+                       (predicted_bet == 'Draw' and actual_result == 'Draw'):
+                        df_copy.at[idx, 'Result'] = 'Win'
+                        df_copy.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
                     else:
-                        df.loc[idx, 'Result'] = 'Loss'
-                        df.loc[idx, 'Profit'] = -row['Stake']
+                        df_copy.at[idx, 'Result'] = 'Loss'
+                        df_copy.at[idx, 'Profit'] = -row['Stake']
                     
-                    df.loc[idx, 'Score'] = score_str
-                    logger.info(f"   > Settled bet for {match_name} ({match_time.date()}) as {actual_result} with score {score_str}")
+                    df_copy.at[idx, 'Score'] = score_str
+                    settled_count += 1
+                    logger.info(f"   > Settled bet for {match_name} as {actual_result} with score {score_str}")
                     
-                except (ValueError, IndexError):
-                    logger.warning(f"   > Could not parse score '{score_str}' for {match_name}")
-                    # Maybe mark as 'Auto-Settled' or leave as 'Pending'?
-                    df.loc[idx, 'Result'] = 'Auto-Settled'
-                    df.loc[idx, 'Profit'] = -row['Stake']
-                    df.loc[idx, 'Score'] = 'N/A (Parse Error)'
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"   > Error processing Google score '{score_str}' for {match_name}: {str(e)}")
+                    # Mark as Auto-Settled if score parsing fails
+                    df_copy.at[idx, 'Result'] = 'Auto-Settled'
+                    df_copy.at[idx, 'Profit'] = -row.get('Stake', 0)
+                    df_copy.at[idx, 'Score'] = 'N/A (Parse Error)'
+                    settled_count += 1
             else:
-                logger.warning(f"   > Unrecognized score format '{score_str}' for {match_name}")
-                df.loc[idx, 'Result'] = 'Auto-Settled'
-                df.loc[idx, 'Profit'] = -row['Stake']
-                df.loc[idx, 'Score'] = 'N/A (Format Error)'
-        else:
-            # If no score found after sufficient time (e.g., 3 days), mark as Auto-Settled
-            if match_time < current_time - timedelta(days=3):
-                df.loc[idx, 'Result'] = 'Auto-Settled'
-                df.loc[idx, 'Profit'] = -row['Stake']
-                df.loc[idx, 'Score'] = 'N/A (Score Not Found)'
-                logger.info(f"   > Auto-settled (score not found) bet for {match_name} ({match_time.date()})")
+                # If no score found after 3 days, mark as Auto-Settled (conservative approach)
+                if match_time < current_time - timedelta(days=3):
+                    df_copy.at[idx, 'Result'] = 'Auto-Settled'
+                    df_copy.at[idx, 'Profit'] = -row.get('Stake', 0)
+                    df_copy.at[idx, 'Score'] = 'N/A (Score Not Found)'
+                    settled_count += 1
+                    logger.info(f"   > Auto-settled (score not found) bet for {match_name} ({match_time.date()})")
     
-    # Save the updated history
-    df.to_csv(history_file, index=False)
-    settled_count = len(df[df['Result'].isin(['Win', 'Loss', 'Auto-Settled'])])
-    logger.info(f"--- Settlement Complete: {settled_count} bets settled using Google ---")
+    if settled_count > 0:
+        logger.info(f"   > Google-based settlement complete. {settled_count} bets settled.")
+    
+    return df_copy
 
+# ==============================================================================
+# GLOBAL SOCCER MODULE (Updated for Google-Only)
+# ==============================================================================
+def calculate_soccer_features(df):
+    teams = pd.concat([df['HomeTeam'], df['AwayTeam']]).unique(); elo_ratings = {team: 1500 for team in teams}; k_factor = 20; home_elos, away_elos = [], []; team_variance = {team: [] for team in teams}
+    team_goals_for = {team: 0 for team in teams}
+    team_goals_against = {team: 0 for team in teams}
+    home_pyth, away_pyth = [], []
 
-# Placeholder implementations for other sports modules (NFL, NBA, MLB)
-# They would follow the same pattern as soccer but adapted for 2-way outcomes (no draw)
+    for i, row in df.iterrows():
+        h, a = row['HomeTeam'], row['AwayTeam']
+        
+        # Elo
+        r_h, r_a = elo_ratings.get(h, 1500), elo_ratings.get(a, 1500)
+        home_elos.append(r_h); away_elos.append(r_a)
+        e_h = 1 / (1 + 10**((r_a - r_h) / 400)); s_h = 1 if row['FTR'] == 'H' else 0 if row['FTR'] == 'A' else 0.5
+        error = (s_h - e_h)**2; team_variance[h].append(error); team_variance[a].append(error)
+        elo_ratings[h] += k_factor * (s_h - e_h); elo_ratings[a] += k_factor * ((1-s_h) - (1-e_h))
+        
+        # Pythagorean
+        h_py = calculate_pythagorean_expectation(team_goals_for[h], team_goals_against[h])
+        a_py = calculate_pythagorean_expectation(team_goals_for[a], team_goals_against[a])
+        home_pyth.append(h_py); away_pyth.append(a_py)
+        
+        # Update Goals
+        team_goals_for[h] += row['FTHG']; team_goals_against[h] += row['FTAG']
+        team_goals_for[a] += row['FTAG']; team_goals_against[a] += row['FTHG']
+
+    df['HomeElo'], df['AwayElo'] = home_elos, away_elos
+    df['HomePyth'], df['AwayPyth'] = home_pyth, away_pyth
+    volatility_map = {t: np.std(v[-10:]) if len(v) > 10 else 0.25 for t, v in team_variance.items()}
+    
+    return df, elo_ratings, volatility_map, team_goals_for, team_goals_against
+
+def train_league_brain(div_code):
+    seasons = ['2324', '2223', '2122']; 
+    try: 
+        df = pd.concat([pd.read_csv(f'https://www.football-data.co.uk/mmz4281/{s}/{div_code}.csv', parse_dates=['Date'], dayfirst=True, on_bad_lines='skip', encoding='latin1') for s in seasons]).sort_values('Date').reset_index(drop=True)
+    except requests.exceptions.RequestException as e: 
+        print(f"Error fetching historical data for league {div_code}: {e}")
+        return None, None
+    except Exception as e:
+        print(f"An unexpected error occurred during data loading for {div_code}: {e}")
+        return None, None
+        
+    if df.empty: return None, None
+    
+    df, elo_ratings, volatility_map, gf, ga = calculate_soccer_features(df)
+    
+    h_stats = df[['Date', 'HomeTeam', 'FTR']].rename(columns={'HomeTeam': 'Team'}); h_stats['Points'] = h_stats['FTR'].map({'H': 3, 'D': 1, 'A': 0})
+    a_stats = df[['Date', 'AwayTeam', 'FTR']].rename(columns={'AwayTeam': 'Team'}); a_stats['Points'] = a_stats['FTR'].map({'A': 3, 'D': 1, 'H': 0})
+    all_stats = pd.concat([h_stats, a_stats]).sort_values('Date'); all_stats['Form_EWMA'] = all_stats.groupby('Team')['Points'].transform(lambda x: x.ewm(span=5, adjust=False).mean().shift(1))
+    df = pd.merge(df, all_stats[['Date', 'Team', 'Form_EWMA']], left_on=['Date', 'HomeTeam'], right_on=['Date', 'Team'], how='left').rename(columns={'Form_EWMA': 'HomeForm'})
+    df = pd.merge(df, all_stats[['Date', 'Team', 'Form_EWMA']], left_on=['Date', 'AwayTeam'], right_on=['Date', 'Team'], how='left').rename(columns={'Form_EWMA': 'AwayForm'})
+    
+    df.dropna(subset=['B365H', 'B365D', 'B365A', 'HomeForm', 'AwayForm'], inplace=True)
+    df['elo_diff'] = df['HomeElo'] - df['AwayElo']
+    df['form_diff'] = df['HomeForm'] - df['AwayForm']
+    df['pyth_diff'] = df['HomePyth'] - df['AwayPyth']
+    
+    features = ['elo_diff', 'form_diff', 'pyth_diff']
+    X, y = df[features], df['FTR']
+    le = LabelEncoder(); y_encoded = le.fit_transform(y); scaler = StandardScaler(); X_scaled = scaler.fit_transform(X)
+    
+    living_model, meta_model = evolve_and_train(X_scaled, y_encoded)
+    
+    avg_goals_home = df['FTHG'].mean(); avg_goals_away = df['FTAG'].mean()
+    home_strength = df.groupby('HomeTeam').agg({'FTHG': 'mean', 'FTAG': 'mean'}).rename(columns={'FTHG': 'h_gf_avg', 'FTAG': 'h_ga_avg'})
+    away_strength = df.groupby('AwayTeam').agg({'FTAG': 'mean', 'FTHG': 'mean'}).rename(columns={'FTAG': 'a_gf_avg', 'FTHG': 'a_ga_avg'})
+    team_strengths = pd.concat([home_strength, away_strength], axis=1).fillna(1)
+    team_strengths['attack'] = (team_strengths['h_gf_avg'] / avg_goals_home + team_strengths['a_gf_avg'] / avg_goals_away) / 2
+    team_strengths['defence'] = (team_strengths['h_ga_avg'] / avg_goals_away + team_strengths['a_ga_avg'] / avg_goals_home) / 2
+    
+    return {'model': living_model, 'meta_model': meta_model, 'le': le, 'scaler': scaler, 'elo_ratings': elo_ratings, 'volatility': volatility_map, 'team_strengths': team_strengths, 'avgs': (avg_goals_home, avg_goals_away), 'gf': gf, 'ga': ga}, df
+
+def run_global_soccer_module():
+    print("--- Running Global Soccer Module (Big 5 + UCL) ---"); bets = []
+    LEAGUE_MAP = {'soccer_epl': 'E0', 'soccer_spain_la_liga': 'SP1', 'soccer_germany_bundesliga': 'D1', 'soccer_italy_serie_a': 'I1', 'soccer_france_ligue_one': 'F1', 'soccer_uefa_champs_league': 'UCL'}
+    for sport_key, div_code in LEAGUE_MAP.items():
+        print(f"   > Scanning {sport_key}...")
+        odds_data = get_live_odds(sport_key) # This now returns empty list - live odds will come from Google
+        brain = None; historical_df = None
+        if div_code != 'UCL': brain, historical_df = train_league_brain(div_code)
+        for game in odds_data: # This loop will now be skipped as odds_data is empty
+            profit, arb_info, bh, bd, ba = find_arbitrage(game, 'Soccer')
+            match_time = game.get('commence_time', 'Unknown')
+            if profit > 0: bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'ARBITRAGE', 'Bet': 'ALL', 'Odds': 0.0, 'Edge': profit, 'Confidence': 1.0, 'Stake': 0.0, 'Info': arb_info}); continue
+            if brain and historical_df is not None:
+                model_home = fuzzy_match_team(game['home_team'], list(brain['elo_ratings'].keys())); model_away = fuzzy_match_team(game['away_team'], list(brain['elo_ratings'].keys()))
+                if model_home and model_away:
+                    h_elo, a_elo = brain['elo_ratings'].get(model_home, 1500), brain['elo_ratings'].get(model_away, 1500)
+                    h_py = calculate_pythagorean_expectation(brain['gf'].get(model_home, 0), brain['ga'].get(model_home, 0))
+                    a_py = calculate_pythagorean_expectation(brain['gf'].get(model_away, 0), brain['ga'].get(model_away, 0))
+                    try: h_form = historical_df[historical_df['HomeTeam'] == model_home].sort_values('Date').iloc[-1]['HomeForm']; a_form = historical_df[historical_df['AwayTeam'] == model_away].sort_values('Date').iloc[-1]['AwayForm']
+                    except: h_form, a_form = 1.5, 1.5
+                    feat_scaled = brain['scaler'].transform(pd.DataFrame([{'elo_diff': h_elo - a_elo, 'form_diff': h_form - a_form, 'pyth_diff': h_py - a_py}]))
+                    probs_alpha = brain['model'].predict_proba(feat_scaled)[0]
+                    if brain['meta_model']:
+                        trust_score = brain['meta_model'].predict_proba(feat_scaled)[0][1]
+                        if trust_score < 0.55: probs_alpha = (probs_alpha + np.array([0.33, 0.33, 0.33])) / 2
+                    try:
+                        avg_goals_home, avg_goals_away = brain['avgs']; team_strengths = brain['team_strengths']
+                        h_att, a_def = team_strengths.loc[model_home]['attack'], team_strengths.loc[model_away]['defence']; a_att, h_def = team_strengths.loc[model_away]['attack'], team_strengths.loc[model_home]['defence']
+                        exp_h, exp_a = h_att * a_def * avg_goals_home, a_att * h_def * avg_goals_away
+                        pm = np.array([[zero_inflated_poisson(i, exp_h) * zero_inflated_poisson(j, exp_a) for j in range(6)] for i in range(6)])
+                        p_h, p_d, p_a = np.sum(np.tril(pm, -1)), np.sum(np.diag(pm)), np.sum(np.triu(pm, 1))
+                    except: p_h, p_d, p_a = 0.33, 0.33, 0.33
+                    final_probs = {'Home Win': probs_alpha[brain['le'].transform(['H'])[0]] * 0.7 + p_h * 0.3, 'Draw': probs_alpha[brain['le'].transform(['D'])[0]] * 0.7 + p_d * 0.3, 'Away Win': probs_alpha[brain['le'].transform(['A'])[0]] * 0.7 + p_a * 0.3}
+                    h_vol = brain['volatility'].get(model_home, 0.25); a_vol = brain['volatility'].get(model_away, 0.25); vol_factor = 1.0 - ((h_vol + a_vol)/2 - 0.25)
+                    for outcome, odds_data in [('Home Win', bh), ('Draw', bd), ('Away Win', ba)]:
+                        if odds_data['price'] > 0:
+                            edge = (final_probs[outcome] * odds_data['price']) - 1
+                            if edge > 0.05: bets.append({'Date': match_time, 'Sport': 'Soccer', 'League': sport_key, 'Match': f"{game['home_team']} vs {game['away_team']}", 'Bet Type': 'Moneyline', 'Bet': outcome, 'Odds': odds_data['price'], 'Edge': edge, 'Confidence': final_probs[outcome], 'Stake': (edge/(odds_data['price']-1))*0.25*vol_factor, 'Info': f"Best: {odds_data['book']}"})
+    return pd.DataFrame(bets)
+
+# ==============================================================================
+# NFL/NBA/MLB MODULES (Placeholder - implement similarly to soccer with Google scraping)
+# ==============================================================================
 def run_nfl_module():
-    logger.warning("NFL module not implemented in Google-only version yet.")
+    print("--- Running NFL Module ---")
+    # Implement similar logic using Google scraping for live NFL odds
     return pd.DataFrame()
 
 def run_nba_module():
-    logger.warning("NBA module not implemented in Google-only version yet.")
+    print("--- Running NBA Module ---")
+    # Implement similar logic using Google scraping for live NBA odds
     return pd.DataFrame()
 
 def run_mlb_module():
-    logger.warning("MLB module not implemented in Google-only version yet.")
+    print("--- Running MLB Module ---")
+    # Implement similar logic using Google scraping for live MLB odds
     return pd.DataFrame()
+
+# ==============================================================================
+# SETTLEMENT ENGINE (Updated for Google-Only)
+# ==============================================================================
+def settle_bets():
+    """Main settlement function using Google score lookup for all sports"""
+    print("--- ⚖️ Running Settlement Engine (Google-based) ---")
+    history_file = 'betting_history.csv'
+    if not os.path.exists(history_file): 
+        print("No history file found for settlement.")
+        return
+    
+    try:
+        df = pd.read_csv(history_file, parse_dates=['Date'])
+    except Exception as e:
+        print(f"Failed to read history file: {str(e)}")
+        return
+    
+    # Initialize columns if missing
+    for col in ['Result', 'Profit', 'Score']:
+        if col not in df.columns:
+            df[col] = 'Pending' if col == 'Result' else 0.0 if col == 'Profit' else ''
+    
+    # Route by sport (currently only Soccer has specific settlement logic implemented)
+    # For other sports, you would add similar functions
+    if 'Sport' in df.columns:
+        soccer_mask = df['Sport'] == 'Soccer'
+        df.loc[soccer_mask] = settle_soccer_bets(df[soccer_mask].copy())
+        # TODO: Add settle_nfl_bets(df[nfl_mask]), etc.
+    else:
+        df = settle_soccer_bets(df.copy()) # Default to soccer if no Sport column
+
+    # Save the updated history
+    try:
+        df.to_csv(history_file, index=False)
+        settled_count = len(df[df['Result'].isin(['Win', 'Loss', 'Push', 'Auto-Settled'])])
+        print(f"Settlement complete. {settled_count} bets settled using Google score lookup.")
+    except Exception as e:
+        print(f"Failed to save settled history: {str(e)}")
 
 # ==============================================================================
 # MODULE EXPORTS
