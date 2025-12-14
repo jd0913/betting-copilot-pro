@@ -1,8 +1,9 @@
 # betting_engine.py
 # The Core Logic: AI Models, Data Fetching, Settlement, Feature Engineering
-# v72.0 (Fixed Syntax Error)
-# FIX: Corrected syntax error in build_ensemble_from_genome function
-# FIX: Ensured proper handling of betting history schema
+# v83.2 (Fixed Dependencies & Google Integration - Current Date)
+# FIX: Added missing imports
+# FIX: Proper Google score lookup integration
+# FIX: Removed old deadline logic from settlement
 
 import pandas as pd
 import numpy as np
@@ -19,6 +20,7 @@ import nfl_data_py as nfl
 from nba_api.stats.endpoints import leaguedashteamstats
 import requests
 from requests.exceptions import RequestException, HTTPError, ConnectionError
+from requests.adapters import HTTPAdapter, Retry  # ADDED THIS LINE
 from bs4 import BeautifulSoup
 import time
 from datetime import datetime, timedelta, timezone
@@ -27,7 +29,15 @@ import json
 import random
 from fuzzywuzzy import process
 from textblob import TextBlob
-import config # Will be handled in backend_runner.py now
+
+# Optional import for config - handle gracefully
+try:
+    import config
+except ImportError:
+    # Create a dummy config if not available
+    class DummyConfig:
+        pass
+    config = DummyConfig()
 
 # ==============================================================================
 # LOGGING SETUP (Professional standard)
@@ -46,9 +56,11 @@ def create_api_session():
         total=3,
         backoff_factor=0.5,
         status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET", "POST"]
+        allowed_methods=["GET", "POST"] # Updated to include POST if needed
     )
-    session.mount("https://", HTTPAdapter(max_retries=retries))
+    adapter = HTTPAdapter(max_retries=retries) # Create adapter separately
+    session.mount("https://", adapter)
+    session.mount("http://", adapter) # Also mount for http if needed
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         "Accept": "application/json"
@@ -351,7 +363,7 @@ def run_mlb_module():
     return pd.DataFrame(columns=['Date', 'Sport', 'League', 'Match', 'Bet Type', 'Bet', 'Odds', 'Edge', 'Confidence', 'Stake', 'Info'])
 
 # ==============================================================================
-# SETTLEMENT ENGINE (Updated for Google-Only)
+# SETTLEMENT ENGINE (Updated for Google-Only - REMOVED OLD DEADLINE)
 # ==============================================================================
 def settle_bets():
     """Main settlement function using Google score lookup for all sports"""
@@ -372,15 +384,17 @@ def settle_bets():
         if col not in df.columns:
             df[col] = 'Pending' if col == 'Result' else 0.0 if col == 'Profit' else ''
     
-    # Import Google settlement function from utils (assuming it exists in the updated utils.py)
+    # Import Google settlement function from utils
     try:
         import utils
-        # This is the critical line - it calls the Google-based settlement in utils.py
-        df = utils.settle_bets_with_google_scores(df)
-    except ImportError:
-        print("Warning: utils module not found. Settlement skipped.")
-    except AttributeError:
-        print("Warning: settle_bets_with_google_scores function not found in utils. Settlement skipped.")
+        if hasattr(utils, 'settle_bets_with_google_scores'):
+            # This is the critical line - it calls the Google-based settlement in utils.py
+            df = utils.settle_bets_with_google_scores(df)
+            print(f"Google-based settlement applied to {len(df)} records.")
+        else:
+            print("Warning: settle_bets_with_google_scores function not found in utils. Settlement skipped.")
+    except ImportError as e:
+        print(f"Warning: utils module import failed: {str(e)}. Settlement skipped.")
     except Exception as e:
         print(f"Error during Google-based settlement: {str(e)}. Settlement skipped.")
     
