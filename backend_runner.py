@@ -1,7 +1,8 @@
 # backend_runner.py
-# Betting Co-Pilot Pro - v82.0 (Google-Only Backend - NO Config)
+# Betting Co-Pilot Pro - v83.2 (Google-Only Backend - NO Config - Current Date)
 # FIX: Removed all config.py dependencies
 # FIX: Integrated Google-based data fetching and settlement
+# FIX: Removed old deadline logic
 
 import pandas as pd
 import numpy as np
