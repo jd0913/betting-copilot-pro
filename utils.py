@@ -1,8 +1,9 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v83.1 (Google Score Lookup & Settlement Engine)
+# v83.2 (Google Score Lookup & Settlement Engine - Current Date)
 # FIX: Added settle_bets_with_google_scores function
 # FIX: Properly handles Date_Obj column creation/validation
+# FIX: Updated deadline logic to use current date
 
 import streamlit as st
 import pandas as pd
@@ -172,7 +173,7 @@ def determine_match_result(home_score, away_score):
 def settle_bets_with_google_scores(history_df):
     """
     Auto-settle bets using Google score lookup for past matches.
-    CRITICAL FIX: Properly handles bets before Dec 8, 2025 deadline and ensures Date_Obj exists.
+    CRITICAL FIX: Uses current date for settlement decisions, removing the Dec 8, 2025 deadline.
     """
     if not isinstance(history_df, pd.DataFrame) or history_df.empty:
         logger.warning("History dataframe is empty or invalid for settlement.")
@@ -193,8 +194,6 @@ def settle_bets_with_google_scores(history_df):
             return history_df
 
     current_time = datetime.now(timezone.utc)
-    # Dec 8, 2025 deadline for forced settlement
-    deadline = pd.to_datetime("2025-12-08 22:00:00", utc=True)
     settled_count = 0
     
     # Create a copy to avoid SettingWithCopyWarning
@@ -213,65 +212,53 @@ def settle_bets_with_google_scores(history_df):
         current_result = row.get('Result', 'Pending')
         current_score = row.get('Score', 'N/A')
         
-        # CRITICAL FIX: Force settlement for all matches before Dec 8, 2025 deadline
-        if match_time <= deadline:
-            if current_result in ['Win', 'Loss', 'Push'] and current_score not in ['N/A', 'nan', 'NaN', '']:
-                # Already properly settled with a score, skip
-                continue
-            else:
-                # Fetch score from Google for matches before deadline
-                score_str = get_google_score(match_name, match_time.strftime('%Y-%m-%d'))
-                
-                if score_str and ' - ' in score_str:
-                    try:
-                        home_score_str, away_score_str = score_str.split(' - ')
-                        home_score = int(home_score_str.strip())
-                        away_score = int(away_score_str.strip())
-                        
-                        # Determine actual result
-                        actual_result = determine_match_result(home_score, away_score)
-                        
-                        # Determine if bet won based on prediction vs actual result
-                        bet_won = (
-                            (predicted_bet == 'Home Win' and actual_result == 'Home Win') or
-                            (predicted_bet == 'Away Win' and actual_result == 'Away Win') or
-                            (predicted_bet == 'Draw' and actual_result == 'Draw')
-                        )
-                        
-                        if bet_won:
-                            df.at[idx, 'Result'] = 'Win'
-                            df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
-                        else:
-                            df.at[idx, 'Result'] = 'Loss'
-                            df.at[idx, 'Profit'] = -row['Stake']
-                        
-                        df.at[idx, 'Score'] = score_str
-                        settled_count += 1
-                        logger.info(f"   > Settled (deadline) bet for {match_name} as {actual_result} with score {score_str}")
-                        
-                    except (ValueError, TypeError) as e:
-                        logger.warning(f"   > Error processing Google score '{score_str}' for {match_name}: {str(e)}")
-                        # Mark as Auto-Settled if score parsing fails
-                        df.at[idx, 'Result'] = 'Auto-Settled'
-                        df.at[idx, 'Profit'] = -row.get('Stake', 0)
-                        df.at[idx, 'Score'] = 'N/A (Parse Error)'
-                        settled_count += 1
-                else:
-                    # If no score found for a match before the deadline, mark as Auto-Settled (conservative approach)
+        # CRITICAL FIX: Check if the match has passed AND the result is still pending
+        # This replaces the old deadline logic
+        if match_time < current_time and current_result == 'Pending':
+            # Fetch score from Google for matches that have passed
+            score_str = get_google_score(match_name, match_time.strftime('%Y-%m-%d'))
+            
+            if score_str and ' - ' in score_str:
+                try:
+                    home_score_str, away_score_str = score_str.split(' - ')
+                    home_score = int(home_score_str.strip())
+                    away_score = int(away_score_str.strip())
+                    
+                    # Determine actual result
+                    actual_result = determine_match_result(home_score, away_score)
+                    
+                    # Determine if bet won based on prediction vs actual result
+                    bet_won = (
+                        (predicted_bet == 'Home Win' and actual_result == 'Home Win') or
+                        (predicted_bet == 'Away Win' and actual_result == 'Away Win') or
+                        (predicted_bet == 'Draw' and actual_result == 'Draw')
+                    )
+                    
+                    if bet_won:
+                        df.at[idx, 'Result'] = 'Win'
+                        df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
+                    else:
+                        df.at[idx, 'Result'] = 'Loss'
+                        df.at[idx, 'Profit'] = -row['Stake']
+                    
+                    df.at[idx, 'Score'] = score_str
+                    settled_count += 1
+                    logger.info(f"   > Settled bet for {match_name} as {actual_result} with score {score_str}")
+                    
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"   > Error processing Google score '{score_str}' for {match_name}: {str(e)}")
+                    # Mark as Auto-Settled if score parsing fails
                     df.at[idx, 'Result'] = 'Auto-Settled'
                     df.at[idx, 'Profit'] = -row.get('Stake', 0)
-                    df.at[idx, 'Score'] = 'N/A (Score Not Found)'
+                    df.at[idx, 'Score'] = 'N/A (Parse Error)'
                     settled_count += 1
-                    logger.info(f"   > Auto-settled (score not found, deadline passed) bet for {match_name} ({match_time.date()})")
-        
-        # For matches *after* the deadline, only auto-settle if they are very old (e.g., 3 days) and still pending
-        elif match_time < current_time - timedelta(days=3):
-            if current_result == 'Pending':
+            else:
+                # If no score found for a match that has passed, mark as Auto-Settled (conservative approach)
                 df.at[idx, 'Result'] = 'Auto-Settled'
                 df.at[idx, 'Profit'] = -row.get('Stake', 0)
-                df.at[idx, 'Score'] = 'N/A (Score Not Found - Old Match)'
+                df.at[idx, 'Score'] = 'N/A (Score Not Found)'
                 settled_count += 1
-                logger.info(f"   > Auto-settled (old pending bet) for {match_name} ({match_time.date()})")
+                logger.info(f"   > Auto-settled (score not found) bet for {match_name} ({match_time.date()})")
     
     if settled_count > 0:
         logger.info(f"   > Google-based settlement complete. {settled_count} bets settled.")
