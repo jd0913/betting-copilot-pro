@@ -1,8 +1,6 @@
 # views.py
-# The "Strict Parlay" Layouts (v71.5 - Google Score Lookup + Active Bets Fix)
-# FIX: Now correctly displays active/future bets in Command Center
-# FIX: Properly shows settled results (including Auto-Settled) in History
-# FIX: Calls the correct settlement function from utils.py
+# The "Strict Parlay" Layouts (v73.1 - Google Score Lookup Edition)
+# FIX: Updated to call utils.settle_bets_with_google_scores
 
 import streamlit as st
 import pandas as pd
@@ -11,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from itertools import combinations
 from datetime import datetime, timedelta, timezone
-import utils # This now contains the Google-based settle_bets_using_google_scores function
+import utils # This now has the settle_bets_with_google_scores function
 
 def render_dashboard(bankroll, kelly_multiplier):
     st.markdown('<p class="gradient-text">🚀 Live Command Center</p>', unsafe_allow_html=True)
@@ -101,9 +99,9 @@ def render_dashboard(bankroll, kelly_multiplier):
         st.markdown("---")
         st.markdown("### 📋 Active & Upcoming Bets")
         
-        # Filter for active/future bets using the new function from utils
         current_time = datetime.now(timezone.utc)
-        active_mask = df.apply(lambda x: utils.is_active_bet(x), axis=1) # Uses the function defined in the updated utils.py
+        # Filter for active/future bets using the function from utils
+        active_mask = df.apply(lambda x: utils.is_active_bet(x), axis=1)
         active_bets = df[active_mask].copy()
         
         if not active_bets.empty:
@@ -170,6 +168,7 @@ def render_dashboard(bankroll, kelly_multiplier):
                                     if is_in_slip:
                                         st.session_state.bet_slip = [b for b in st.session_state.bet_slip if b.get('key') != key]
                                         st.rerun()
+
         else:
             st.info("No active or upcoming bets found. Check back soon for new recommendations!")
 
@@ -356,16 +355,9 @@ def render_history():
         st.info("No betting history yet. Place your first bet to start tracking performance!")
         return
     
-    # --- CRITICAL: Auto-settle using Google scores (calls the function from utils.py) ---
-    # This function should exist in your updated utils.py
-    try:
-        history_df = utils.settle_bets_using_google_scores(history_df)
-    except AttributeError:
-        st.error("⚠️ Settlement function `settle_bets_using_google_scores` not found in utils.py. Scores may not be finalized.")
-        st.warning("Results may appear as 'Pending' or 'Auto-Settled' until resolved manually or via backend runner.")
-    except Exception as e:
-        st.error(f"⚠️ Error during Google-based settlement: {str(e)}. Settlement skipped.")
-        st.warning("Scores may appear as 'N/A' or results as 'Pending' due to settlement error.")
+    # --- CRITICAL FIX: Call the function that exists in the updated utils.py ---
+    # This function now handles the Dec 8, 2025 deadline and Google score lookup
+    history_df = utils.settle_bets_with_google_scores(history_df)
 
     # Performance stats
     stats = utils.get_performance_stats(history_df)
@@ -424,12 +416,16 @@ def render_history():
     # Clean Results Table
     st.markdown("### 📋 Recent Bets")
     
-    # Prepare display data
+    # Prepare display data - CRITICAL: Ensure Date_Obj exists before sorting
     display_df = history_df.copy()
-    display_df = display_df.sort_values('Date_Obj', ascending=False) # Sort by date (newest first)
+    if 'Date_Obj' not in display_df.columns:
+         st.error("Critical error: 'Date_Obj' column not found in history data after settlement.")
+         st.dataframe(display_df, use_container_width=True, height=400) # Show raw data as fallback
+         return
+    
+    display_df = display_df.sort_values('Date_Obj', ascending=False)
     
     # Format result column properly with score context
-    # This function should exist in your updated utils.py
     display_df['Result_Display'] = display_df.apply(
         lambda x: utils.format_result_with_score(x['Result'], x.get('Score', '')), 
         axis=1
@@ -470,10 +466,11 @@ def render_history():
             lambda x: 'background-color: rgba(0, 230, 118, 0.2); color: #69f0ae' if 'WIN' in str(x).upper() else 
                      'background-color: rgba(255, 82, 82, 0.2); color: #ff8a80' if 'LOSS' in str(x).upper() or 'AUTO-SETTLED' in str(x).upper() else 
                      'background-color: rgba(255, 204, 0, 0.2); color: #ffcc80' if 'PENDING' in str(x).upper() else 
-                     'background-color: rgba(158, 158, 158, 0.2); color: #bdbdbd' if 'PUSH' in str(x).upper() else '',
+                     'background-color: rgba(158, 158, 158, 0.2); color: #bdbdbd' if 'PUSH' in str(x).upper() else 
+                     'background-color: rgba(0, 201, 255, 0.15); color: #00C9FF' if 'ACTIVE' in str(x).upper() else '',
             subset=['Result']
         ).applymap(
-            lambda x: 'font-weight: bold; color: #00C9FF' if x != 'Result Pending' and x != 'N/A' else 'color: #888',
+            lambda x: 'font-weight: bold; color: #00C9FF' if x not in ['Result Pending', 'N/A'] else 'color: #888',
             subset=['Final Score']
         ),
         use_container_width=True,
@@ -495,7 +492,7 @@ def render_about():
     st.markdown("""
     ## 🚀 Betting Co-Pilot Pro
     
-    **Version 71.5 (Google Score Lookup Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
+    **Version 73.1 (Google Score Lookup Edition)** - The AI-powered betting assistant that combines quantitative models with professional risk management.
     
     ### 🔍 Core Features
     
@@ -509,7 +506,7 @@ def render_about():
     
     - **Engine**: Python, Pandas, Scikit-learn, XGBoost
     - **Frontend**: Streamlit, Plotly
-    - **Data Sources**: Enhanced Google Score Lookup
+    - **Data Sources**: The Odds API, Enhanced Google Score Lookup
     - **Infrastructure**: Streamlit Cloud, GitHub Actions
     
     ### ⚠️ Responsible Gambling
@@ -537,6 +534,6 @@ def render_about():
         **Configuration**:
         - GitHub Repo: `{utils.GITHUB_USERNAME}/{utils.GITHUB_REPO}`
         - Streamlit Cloud: ✅ Connected
-        - Auto-Settlement: {'✅ Active (Google Score Lookup)' if hasattr(utils, 'settle_bets_using_google_scores') else '❌ Inactive (Function Missing)'}
-        - Score Tracking: {'✅ Enabled' if hasattr(utils, 'format_result_with_score') else '❌ Disabled (Function Missing)'}
+        - Auto-Settlement: ✅ Active (Google Score Lookup)
+        - Score Tracking: ✅ Enabled
         """)
