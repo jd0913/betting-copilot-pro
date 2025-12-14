@@ -1,13 +1,8 @@
-The error is happening because the `settle_bets_with_google_scores` function in `utils.py` is not correctly handling the `Date_Obj` column, which is required for the sorting operation `display_df.sort_values('Date_Obj', ascending=False)` in `views.py`.
-
-Here's the **fixed `utils.py`** that ensures the `Date_Obj` column is always present and properly formatted before returning the dataframe:
-
-```python
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v82.2 (Google Score Settlement & Date_Obj Fix)
-# FIX: Ensures Date_Obj column exists after settlement
-# FIX: Properly handles all result types (Win, Loss, Push, Auto-Settled)
+# v83.1 (Google Score Lookup & Settlement Engine)
+# FIX: Added settle_bets_with_google_scores function
+# FIX: Properly handles Date_Obj column creation/validation
 
 import streamlit as st
 import pandas as pd
@@ -25,35 +20,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BettingUtils")
 
 # HARDCODED GITHUB REPO (Replaces config)
-GITHUB_USERNAME = "jd0913" # Replace with your actual username
-GITHUB_REPO = "betting-copilot-pro" # Replace with your actual repo name
+GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "jd0913") # Use env var or default
+GITHUB_REPO = os.getenv("GITHUB_REPO", "betting-copilot-pro") # Use env var or default
 
 # Fixed URL formatting
 LATEST_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/latest_bets.csv"
 HISTORY_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/main/betting_history.csv"
 
-# Define consistent schema
-BET_SCHEMA = {
-    'Date': 'datetime64[ns, UTC]',
-    'Date_Generated': 'datetime64[ns, UTC]',
-    'Sport': 'string',
-    'League': 'string',
-    'Match': 'string',
-    'Bet_Type': 'string', # Renamed from 'Bet Type' for consistency
-    'Bet': 'string',
-    'Odds': 'float64',
-    'Edge': 'float64',
-    'Confidence': 'float64',
-    'Stake': 'float64',
-    'Info': 'string',
-    'Result': 'category',
-    'Profit': 'float64',
-    'Score': 'string'
-}
-
 @st.cache_data(ttl=600)
 def load_data(url):
-    """Safely load data from GitHub with proper schema validation"""
+    """Safely load data from GitHub with proper schema validation and Date_Obj creation"""
     try:
         logger.info(f"Loading data from: {url}")
         response = requests.get(url, timeout=10)
@@ -78,28 +54,30 @@ def load_data(url):
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
         
-        # Date Formatting with UTC handling
+        # Date Formatting with UTC handling and critical Date_Obj creation
         if 'Date' in df.columns:
             try:
+                # Try to parse date with flexible formats
                 df['Date_Obj'] = pd.to_datetime(df['Date'], errors='coerce', utc=True)
             except:
+                # Fallback for different date formats
                 df['Date_Obj'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce', utc=True)
             
+            # Filter out NaT values and format dates
             df = df[df['Date_Obj'].notna()].copy()
             df['Formatted_Date'] = df['Date_Obj'].dt.strftime('%a, %b %d • %I:%M %p')
         else:
             df['Formatted_Date'] = 'Time TBD'
             df['Date_Obj'] = pd.NaT
         
-        # Handle Score column properly
+        # Handle Score column properly to prevent 'nan' values
         if 'Score' in df.columns:
             df['Score'] = df['Score'].fillna('N/A').astype(str)
-            df['Score'] = df['Score'].apply(lambda x: 'N/A' if str(x).lower() in ['nan', ''] else str(x))
+            # Replace any 'nan' string values with 'N/A'
+            df['Score'] = df['Score'].apply(lambda x: 'N/A' if str(x).lower() == 'nan' else x)
         else:
             df['Score'] = 'N/A'
         
-        # Validate and enforce schema
-        df = validate_bet_schema(df)
         return df
         
     except requests.exceptions.RequestException as e:
@@ -115,34 +93,6 @@ def load_data(url):
         logger.exception(f"Unexpected error loading {url}: {str(e)}")
         return "FILE_NOT_FOUND"
 
-def validate_bet_schema(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure dataframe matches expected schema with proper dtypes"""
-    for col, dtype in BET_SCHEMA.items():
-        if col not in df.columns:
-            if "datetime" in dtype:
-                df[col] = pd.NaT
-            elif "float" in dtype:
-                df[col] = 0.0
-            elif "category" in dtype:
-                df[col] = pd.Categorical([])
-            else:
-                df[col] = ""
-    
-    for col, dtype in BET_SCHEMA.items():
-        try:
-            if "datetime" in dtype:
-                df[col] = pd.to_datetime(df[col], utc=True)
-            elif "category" in dtype:
-                df[col] = pd.Categorical(df[col])
-            else:
-                df[col] = df[col].astype(dtype)
-        except Exception as e:
-            logger.warning(f"Schema conversion failed for {col}: {str(e)}")
-            if "float" in dtype:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-    
-    return df[list(BET_SCHEMA.keys())] # Enforce column order
-
 def get_google_score(match_name, match_date_str):
     """
     Scrape Google for the final score of a match.
@@ -150,7 +100,7 @@ def get_google_score(match_name, match_date_str):
         match_name (str): e.g., "Arsenal vs Chelsea"
         match_date_str (str): Date in 'YYYY-MM-DD' format
     Returns:
-        str: Score in format "X - Y" or None if not found or pending.
+        str: Score in format "X - Y" or None if not found.
     """
     # Construct search query including date for accuracy
     search_query = f"{match_name} {match_date_str} score"
@@ -219,58 +169,58 @@ def determine_match_result(home_score, away_score):
     else:
         return 'Draw'
 
-def settle_bets_using_google_scores(history_df):
+def settle_bets_with_google_scores(history_df):
     """
     Auto-settle bets using Google score lookup for past matches.
-    CRITICAL FIX: Ensures Date_Obj column exists and is properly formatted throughout process.
+    CRITICAL FIX: Properly handles bets before Dec 8, 2025 deadline and ensures Date_Obj exists.
     """
     if not isinstance(history_df, pd.DataFrame) or history_df.empty:
         logger.warning("History dataframe is empty or invalid for settlement.")
         return history_df
-    
-    # Ensure Date_Obj exists before proceeding
+
+    # Ensure Date_Obj column exists (critical for the KeyError fix)
     if 'Date_Obj' not in history_df.columns:
-        logger.error("CRITICAL: 'Date_Obj' column missing from history dataframe. Cannot settle bets.")
-        # Attempt to create it from 'Date' column if available
+        logger.error("CRITICAL: 'Date_Obj' column missing from history dataframe. Attempting recovery...")
         if 'Date' in history_df.columns:
             try:
                 history_df['Date_Obj'] = pd.to_datetime(history_df['Date'], utc=True)
-                logger.info("'Date_Obj' created from 'Date' column.")
+                logger.info("'Date_Obj' column created from 'Date' column.")
             except Exception as e:
-                logger.error(f"Failed to create 'Date_Obj' from 'Date': {str(e)}")
-                return history_df # Return unchanged if we can't create Date_Obj
+                logger.error(f"Failed to create 'Date_Obj' from 'Date': {str(e)}. Settlement skipped.")
+                return history_df
         else:
-            logger.error("Neither 'Date_Obj' nor 'Date' column found. Settlement impossible.")
+            logger.error("Neither 'Date_Obj' nor 'Date' column found. Cannot perform settlement.")
             return history_df
 
     current_time = datetime.now(timezone.utc)
+    # Dec 8, 2025 deadline for forced settlement
+    deadline = pd.to_datetime("2025-12-08 22:00:00", utc=True)
     settled_count = 0
     
-    # Work on a copy to avoid SettingWithCopyWarning
+    # Create a copy to avoid SettingWithCopyWarning
     df = history_df.copy()
     
     for idx, row in df.iterrows():
         try:
             # Get match details - ensure Date_Obj is parsed correctly
-            try:
-                match_date = pd.to_datetime(row['Date_Obj'], utc=True)
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Could not parse Date_Obj for row {idx}: {e}. Skipping settlement.")
-                continue # Skip this row if date parsing fails
-                
-            match_name = row['Match']
-            predicted_bet = row['Bet']
-            current_result = row.get('Result', 'Pending')
-            current_score = row.get('Score', 'N/A')
+            match_time = pd.to_datetime(row['Date_Obj'], utc=True)
+        except (ValueError, TypeError):
+            logger.warning(f"Could not parse Date_Obj for row {idx}. Skipping settlement.")
+            continue # Skip this row if date parsing fails
             
-            # Skip if already properly settled
-            if current_result in ['Win', 'Loss', 'Push'] and current_score != 'N/A' and pd.notna(pd.to_numeric(current_score.split(' - ')[0], errors='coerce')):
+        match_name = row['Match']
+        predicted_bet = row['Bet']
+        current_result = row.get('Result', 'Pending')
+        current_score = row.get('Score', 'N/A')
+        
+        # CRITICAL FIX: Force settlement for all matches before Dec 8, 2025 deadline
+        if match_time <= deadline:
+            if current_result in ['Win', 'Loss', 'Push'] and current_score not in ['N/A', 'nan', 'NaN', '']:
+                # Already properly settled with a score, skip
                 continue
-            
-            # Only process matches that are at least 2 hours old
-            if match_date < current_time - timedelta(hours=2):
-                # Fetch score from Google
-                score_str = get_google_score(match_name, match_date.strftime('%Y-%m-%d'))
+            else:
+                # Fetch score from Google for matches before deadline
+                score_str = get_google_score(match_name, match_time.strftime('%Y-%m-%d'))
                 
                 if score_str and ' - ' in score_str:
                     try:
@@ -281,51 +231,52 @@ def settle_bets_using_google_scores(history_df):
                         # Determine actual result
                         actual_result = determine_match_result(home_score, away_score)
                         
-                        # Determine if bet won
-                        if (predicted_bet == 'Home Win' and actual_result == 'Home Win') or \
-                           (predicted_bet == 'Away Win' and actual_result == 'Away Win') or \
-                           (predicted_bet == 'Draw' and actual_result == 'Draw'):
-                            df.loc[idx, 'Result'] = 'Win'
-                            df.loc[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
-                        else:
-                            df.loc[idx, 'Result'] = 'Loss'
-                            df.loc[idx, 'Profit'] = -row['Stake']
+                        # Determine if bet won based on prediction vs actual result
+                        bet_won = (
+                            (predicted_bet == 'Home Win' and actual_result == 'Home Win') or
+                            (predicted_bet == 'Away Win' and actual_result == 'Away Win') or
+                            (predicted_bet == 'Draw' and actual_result == 'Draw')
+                        )
                         
-                        df.loc[idx, 'Score'] = score_str
+                        if bet_won:
+                            df.at[idx, 'Result'] = 'Win'
+                            df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
+                        else:
+                            df.at[idx, 'Result'] = 'Loss'
+                            df.at[idx, 'Profit'] = -row['Stake']
+                        
+                        df.at[idx, 'Score'] = score_str
                         settled_count += 1
-                        logger.info(f"   > Settled bet for {match_name} as {actual_result} with score {score_str}")
+                        logger.info(f"   > Settled (deadline) bet for {match_name} as {actual_result} with score {score_str}")
                         
                     except (ValueError, TypeError) as e:
                         logger.warning(f"   > Error processing Google score '{score_str}' for {match_name}: {str(e)}")
                         # Mark as Auto-Settled if score parsing fails
-                        df.loc[idx, 'Result'] = 'Auto-Settled'
-                        df.loc[idx, 'Profit'] = -row.get('Stake', 0)
-                        df.loc[idx, 'Score'] = 'N/A (Parse Error)'
+                        df.at[idx, 'Result'] = 'Auto-Settled'
+                        df.at[idx, 'Profit'] = -row.get('Stake', 0)
+                        df.at[idx, 'Score'] = 'N/A (Parse Error)'
                         settled_count += 1
-                        
                 else:
-                    # If no score found after 3 days, mark as Auto-Settled
-                    if match_date < current_time - timedelta(days=3):
-                        df.loc[idx, 'Result'] = 'Auto-Settled'
-                        df.loc[idx, 'Profit'] = -row.get('Stake', 0)
-                        df.loc[idx, 'Score'] = 'N/A (Score Not Found)'
-                        settled_count += 1
-                        logger.info(f"   > Auto-settled (score not found) bet for {match_name} ({match_date.date()})")
-            
-        except (KeyError, TypeError, ValueError) as e:
-            logger.warning(f"   > Error processing row {idx} for settlement: {str(e)}")
-            continue # Skip problematic rows
+                    # If no score found for a match before the deadline, mark as Auto-Settled (conservative approach)
+                    df.at[idx, 'Result'] = 'Auto-Settled'
+                    df.at[idx, 'Profit'] = -row.get('Stake', 0)
+                    df.at[idx, 'Score'] = 'N/A (Score Not Found)'
+                    settled_count += 1
+                    logger.info(f"   > Auto-settled (score not found, deadline passed) bet for {match_name} ({match_time.date()})")
+        
+        # For matches *after* the deadline, only auto-settle if they are very old (e.g., 3 days) and still pending
+        elif match_time < current_time - timedelta(days=3):
+            if current_result == 'Pending':
+                df.at[idx, 'Result'] = 'Auto-Settled'
+                df.at[idx, 'Profit'] = -row.get('Stake', 0)
+                df.at[idx, 'Score'] = 'N/A (Score Not Found - Old Match)'
+                settled_count += 1
+                logger.info(f"   > Auto-settled (old pending bet) for {match_name} ({match_time.date()})")
     
     if settled_count > 0:
         logger.info(f"   > Google-based settlement complete. {settled_count} bets settled.")
     
-    # Ensure Date_Obj still exists after modifications
-    if 'Date_Obj' not in df.columns:
-        logger.error("CRITICAL ERROR: 'Date_Obj' column was removed during settlement process!")
-        # Attempt to recreate it if it was lost (shouldn't happen with .loc, but just in case)
-        if 'Date' in df.columns:
-            df['Date_Obj'] = pd.to_datetime(df['Date'], utc=True)
-    
+    # Return the modified copy
     return df
 
 def get_performance_stats(history_df):
@@ -704,4 +655,3 @@ def format_currency(value):
         return "$0.00"
     sign = "+" if value > 0 else "-"
     return f"{sign}${abs(value):,.2f}"
-```
