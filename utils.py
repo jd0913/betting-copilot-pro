@@ -1,7 +1,13 @@
+The error is happening because the `settle_bets_with_google_scores` function in `utils.py` is not correctly handling the `Date_Obj` column, which is required for the sorting operation `display_df.sort_values('Date_Obj', ascending=False)` in `views.py`.
+
+Here's the **fixed `utils.py`** that ensures the `Date_Obj` column is always present and properly formatted before returning the dataframe:
+
+```python
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v83.0 (Added missing settlement function)
-# FIX: Added settle_bets_using_google_scores function
+# v82.2 (Google Score Settlement & Date_Obj Fix)
+# FIX: Ensures Date_Obj column exists after settlement
+# FIX: Properly handles all result types (Win, Loss, Push, Auto-Settled)
 
 import streamlit as st
 import pandas as pd
@@ -33,7 +39,7 @@ BET_SCHEMA = {
     'Sport': 'string',
     'League': 'string',
     'Match': 'string',
-    'Bet_Type': 'string',
+    'Bet_Type': 'string', # Renamed from 'Bet Type' for consistency
     'Bet': 'string',
     'Odds': 'float64',
     'Edge': 'float64',
@@ -88,7 +94,7 @@ def load_data(url):
         # Handle Score column properly
         if 'Score' in df.columns:
             df['Score'] = df['Score'].fillna('N/A').astype(str)
-            df['Score'] = df['Score'].apply(lambda x: 'N/A' if x.lower() in ['nan', ''] else x)
+            df['Score'] = df['Score'].apply(lambda x: 'N/A' if str(x).lower() in ['nan', ''] else str(x))
         else:
             df['Score'] = 'N/A'
         
@@ -213,35 +219,55 @@ def determine_match_result(home_score, away_score):
     else:
         return 'Draw'
 
-# --- CRITICAL: MISSING FUNCTION ADDED ---
 def settle_bets_using_google_scores(history_df):
     """
     Auto-settle bets using Google score lookup for past matches.
-    This function is called by views.py.
+    CRITICAL FIX: Ensures Date_Obj column exists and is properly formatted throughout process.
     """
     if not isinstance(history_df, pd.DataFrame) or history_df.empty:
+        logger.warning("History dataframe is empty or invalid for settlement.")
         return history_df
     
+    # Ensure Date_Obj exists before proceeding
+    if 'Date_Obj' not in history_df.columns:
+        logger.error("CRITICAL: 'Date_Obj' column missing from history dataframe. Cannot settle bets.")
+        # Attempt to create it from 'Date' column if available
+        if 'Date' in history_df.columns:
+            try:
+                history_df['Date_Obj'] = pd.to_datetime(history_df['Date'], utc=True)
+                logger.info("'Date_Obj' created from 'Date' column.")
+            except Exception as e:
+                logger.error(f"Failed to create 'Date_Obj' from 'Date': {str(e)}")
+                return history_df # Return unchanged if we can't create Date_Obj
+        else:
+            logger.error("Neither 'Date_Obj' nor 'Date' column found. Settlement impossible.")
+            return history_df
+
     current_time = datetime.now(timezone.utc)
     settled_count = 0
     
-    # Create a copy to avoid SettingWithCopyWarning
+    # Work on a copy to avoid SettingWithCopyWarning
     df = history_df.copy()
     
     for idx, row in df.iterrows():
         try:
-            # Get match details
-            match_date = pd.to_datetime(row['Date_Obj'], utc=True)
+            # Get match details - ensure Date_Obj is parsed correctly
+            try:
+                match_date = pd.to_datetime(row['Date_Obj'], utc=True)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Could not parse Date_Obj for row {idx}: {e}. Skipping settlement.")
+                continue # Skip this row if date parsing fails
+                
             match_name = row['Match']
             predicted_bet = row['Bet']
             current_result = row.get('Result', 'Pending')
             current_score = row.get('Score', 'N/A')
             
             # Skip if already properly settled
-            if current_result in ['Win', 'Loss', 'Push'] and current_score != 'N/A' and current_score != 'nan':
+            if current_result in ['Win', 'Loss', 'Push'] and current_score != 'N/A' and pd.notna(pd.to_numeric(current_score.split(' - ')[0], errors='coerce')):
                 continue
             
-            # Only settle matches that are at least 2 hours old (to ensure scores are posted)
+            # Only process matches that are at least 2 hours old
             if match_date < current_time - timedelta(hours=2):
                 # Fetch score from Google
                 score_str = get_google_score(match_name, match_date.strftime('%Y-%m-%d'))
@@ -259,30 +285,30 @@ def settle_bets_using_google_scores(history_df):
                         if (predicted_bet == 'Home Win' and actual_result == 'Home Win') or \
                            (predicted_bet == 'Away Win' and actual_result == 'Away Win') or \
                            (predicted_bet == 'Draw' and actual_result == 'Draw'):
-                            df.at[idx, 'Result'] = 'Win'
-                            df.at[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
+                            df.loc[idx, 'Result'] = 'Win'
+                            df.loc[idx, 'Profit'] = row['Stake'] * (row['Odds'] - 1)
                         else:
-                            df.at[idx, 'Result'] = 'Loss'
-                            df.at[idx, 'Profit'] = -row['Stake']
+                            df.loc[idx, 'Result'] = 'Loss'
+                            df.loc[idx, 'Profit'] = -row['Stake']
                         
-                        df.at[idx, 'Score'] = score_str
+                        df.loc[idx, 'Score'] = score_str
                         settled_count += 1
                         logger.info(f"   > Settled bet for {match_name} as {actual_result} with score {score_str}")
                         
                     except (ValueError, TypeError) as e:
                         logger.warning(f"   > Error processing Google score '{score_str}' for {match_name}: {str(e)}")
                         # Mark as Auto-Settled if score parsing fails
-                        df.at[idx, 'Result'] = 'Auto-Settled'
-                        df.at[idx, 'Profit'] = -row.get('Stake', 0)
-                        df.at[idx, 'Score'] = 'N/A (Parse Error)'
+                        df.loc[idx, 'Result'] = 'Auto-Settled'
+                        df.loc[idx, 'Profit'] = -row.get('Stake', 0)
+                        df.loc[idx, 'Score'] = 'N/A (Parse Error)'
                         settled_count += 1
                         
                 else:
                     # If no score found after 3 days, mark as Auto-Settled
                     if match_date < current_time - timedelta(days=3):
-                        df.at[idx, 'Result'] = 'Auto-Settled'
-                        df.at[idx, 'Profit'] = -row.get('Stake', 0)
-                        df.at[idx, 'Score'] = 'N/A (Score Not Found)'
+                        df.loc[idx, 'Result'] = 'Auto-Settled'
+                        df.loc[idx, 'Profit'] = -row.get('Stake', 0)
+                        df.loc[idx, 'Score'] = 'N/A (Score Not Found)'
                         settled_count += 1
                         logger.info(f"   > Auto-settled (score not found) bet for {match_name} ({match_date.date()})")
             
@@ -292,6 +318,13 @@ def settle_bets_using_google_scores(history_df):
     
     if settled_count > 0:
         logger.info(f"   > Google-based settlement complete. {settled_count} bets settled.")
+    
+    # Ensure Date_Obj still exists after modifications
+    if 'Date_Obj' not in df.columns:
+        logger.error("CRITICAL ERROR: 'Date_Obj' column was removed during settlement process!")
+        # Attempt to recreate it if it was lost (shouldn't happen with .loc, but just in case)
+        if 'Date' in df.columns:
+            df['Date_Obj'] = pd.to_datetime(df['Date'], utc=True)
     
     return df
 
@@ -478,9 +511,9 @@ def inject_custom_css():
             display: inline-block;
         }
         .res-auto-settled {
-            color: #ff8a80;
+            color: #ff8a80; /* Same color as loss */
             font-weight: 600;
-            background: rgba(183, 28, 28, 0.15); /* Slightly different for auto-settled */
+            background: rgba(183, 28, 28, 0.15); /* Slightly different bg */
             padding: 2px 8px;
             border-radius: 6px;
             display: inline-block;
@@ -671,3 +704,4 @@ def format_currency(value):
         return "$0.00"
     sign = "+" if value > 0 else "-"
     return f"{sign}${abs(value):,.2f}"
+```
