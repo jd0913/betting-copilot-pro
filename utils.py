@@ -1,10 +1,10 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v83.3 (Google Score Lookup & Settlement Engine - Enhanced Past Match Lookup)
+# v83.4 (Google Score Lookup & Settlement Engine - Enhanced Past Match Lookup)
 # FIX: Added settle_bets_with_google_scores function
 # FIX: Properly handles Date_Obj column creation/validation
 # FIX: Updated deadline logic to use current date
-# FIX: Enhanced Google score lookup for past matches
+# FIX: Enhanced Google score lookup for past matches - Version 2
 
 import streamlit as st
 import pandas as pd
@@ -105,99 +105,119 @@ def get_google_score(match_name, match_date_str):
         str: Score in format "X - Y" or None if not found.
     """
     # Construct search query including date for accuracy
-    search_query = f"{match_name} {match_date_str} final score"
-    encoded_query = search_query.replace(' ', '+')
-    url = f"https://www.google.com/search?q={encoded_query}"
+    # Try multiple query formats to increase chances
+    search_queries = [
+        f"{match_name} {match_date_str} final score",
+        f"{match_name} {match_date_str} score",
+        f"{match_name} {match_date_str} result",
+        f"{match_name} final score {match_date_str}",
+        f"{match_name} score {match_date_str}",
+    ]
     
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
-    
-    try:
-        logger.info(f"Scraping Google for score: {match_name} ({match_date_str})")
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
+
+    for search_query in search_queries:
+        encoded_query = search_query.replace(' ', '+')
+        url = f"https://www.google.com/search?q={encoded_query}"
         
-        # List of potential selectors for Google sports score boxes
-        # These might change over time, so we try multiple
-        potential_selectors = [
-            # Primary selectors (most likely)
-            'div[data-hveid] div[jsname="vZSTIf"]', # General result box content
-            'div[data-hveid] div[jsname="sTFXNd"]', # Another common result box
-            'div[data-hveid] div[jsname="XcVN5d"]', # Another possible structure
-            # Specific sports box selectors (might be nested)
-            'div[data-attrid="kc:/sports/sports_team_record:score"]', # Old style?
-            'div[data-attrid="kc:/sports:sport"]', # General sports section
-            # Alternative: Look for specific class names often used for scores
-            'div[class*="imso_mh"]', # Google's sports module classes
-            'div[class*="imso_mh__scr"]', # Score-specific classes
-            'div[class*="imso_mh__s-"]', # Score elements
-            'span[class*="imso_mh"]', # Score spans
-            'span[class*="imso_mh__t"]', # Team score spans
-        ]
-        
-        score_text = ""
-        
-        # Try each selector combination
-        for selector in potential_selectors:
-            elements = soup.select(selector)
-            if elements:
-                for element in elements:
-                    text = element.get_text().strip()
-                    # Look for patterns like "2 - 1", "3:0", "1-0", "2-1 FT", etc.
-                    score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)(?:\s*FT|\s*F)?', text)
+        try:
+            logger.info(f"Scraping Google for score: {match_name} ({match_date_str}) using query: {search_query}")
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # --- APPROACH 1: Try Specific Selectors (Previous attempts) ---
+            potential_selectors = [
+                # Primary selectors (most likely)
+                'div[data-hveid] div[jsname="vZSTIf"]', # General result box content
+                'div[data-hveid] div[jsname="sTFXNd"]', # Another common result box
+                'div[data-hveid] div[jsname="XcVN5d"]', # Another possible structure
+                # Specific sports box selectors (might be nested)
+                'div[data-attrid="kc:/sports/sports_team_record:score"]', # Old style?
+                'div[data-attrid="kc:/sports:sport"]', # General sports section
+                # Alternative: Look for specific class names often used for scores
+                'div[class*="imso_mh"]', # Google's sports module classes
+                'div[class*="imso_mh__scr"]', # Score-specific classes
+                'div[class*="imso_mh__s-"]', # Score elements
+                'span[class*="imso_mh"]', # Score spans
+                'span[class*="imso_mh__t"]', # Team score spans
+                # New: Try broader selectors for sports data
+                '[data-attrid*="score"]',
+                '[data-attrid*="sports"]',
+                'div[jsname*="score"]',
+                'div[jsname*="sports"]',
+            ]
+
+            for selector in potential_selectors:
+                elements = soup.select(selector)
+                if elements:
+                    for element in elements:
+                        text = element.get_text().strip()
+                        # Look for patterns like "2 - 1", "3:0", "1-0", "2-1 FT", etc.
+                        score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)(?:\s*FT|\s*F)?', text)
+                        if score_match:
+                            home_score = score_match.group(1)
+                            away_score = score_match.group(2)
+                            logger.info(f"   > Google score found with selector '{selector}' on query '{search_query}': {home_score} - {away_score}")
+                            return f"{home_score} - {away_score}"
+
+            # --- APPROACH 2: Search All Text Content for Score Pattern ---
+            # Get the full text of the page
+            page_text = soup.get_text()
+            
+            # Look for the match name first, then find a nearby score pattern
+            # This is more resilient to page structure changes
+            # Use a regex that looks for the match name followed by some text and then a score
+            # Example: "Arsenal vs Chelsea ... 2 - 1" or "Arsenal vs Chelsea ... Final Score: 2-1"
+            # This regex is more complex but tries to find the score near the match name
+            match_name_pattern = re.escape(match_name)
+            # Search for the match name, any text (non-greedy), and then the score pattern
+            # within a reasonable distance (e.g., 100 characters)
+            nearby_score_pattern = rf'{match_name_pattern}.*?(\d{{1,2}}\s*[-:]\s*\d{{1,2}})(?:\s*FT|\s*F)?'
+            
+            nearby_match = re.search(nearby_score_pattern, page_text, re.IGNORECASE)
+            if nearby_match:
+                score_str = nearby_match.group(1).strip()
+                # Validate the score string format
+                score_parts = re.split(r'[-:]', score_str)
+                if len(score_parts) == 2 and all(part.isdigit() for part in score_parts):
+                    logger.info(f"   > Google score found near match name in page text on query '{search_query}': {score_str}")
+                    return score_str
+
+            # If not found near the name, search the entire page text for the pattern
+            full_text_score_pattern = r'(\d{1,2})\s*[-:]\s*(\d{1,2})(?:\s*FT|\s*F)?'
+            all_score_matches = re.findall(full_text_score_pattern, page_text)
+            if all_score_matches:
+                # Return the first match found (most likely the main one)
+                home_score, away_score = all_score_matches[0]
+                logger.info(f"   > Google score found in full page text on query '{search_query}': {home_score} - {away_score}")
+                return f"{home_score} - {away_score}"
+
+            # --- APPROACH 3: Check for Specific Google Sports Data Attributes ---
+            # Sometimes scores are embedded in data attributes
+            # This is less common but worth a try
+            for div in soup.find_all('div'):
+                data_attr = div.get('data-attrid')
+                if data_attr and 'score' in data_attr.lower():
+                    text_content = div.get_text().strip()
+                    score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)(?:\s*FT|\s*F)?', text_content)
                     if score_match:
                         home_score = score_match.group(1)
                         away_score = score_match.group(2)
-                        logger.info(f"   > Google score found with selector '{selector}': {home_score} - {away_score}")
+                        logger.info(f"   > Google score found in data-attrid div on query '{search_query}': {home_score} - {away_score}")
                         return f"{home_score} - {away_score}"
-                    # Also check for the text content of the element itself
-                    score_text += " " + text
-        
-        # If no score found in structured elements, search in all divs/text content
-        # This is a fallback, less reliable
-        if score_text:
-             # Look for patterns like "2 - 1", "3:0", "1-0", "2-1 FT", etc. in the collected text
-            score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)(?:\s*FT|\s*F)?', score_text)
-            if score_match:
-                home_score = score_match.group(1)
-                away_score = score_match.group(2)
-                logger.info(f"   > Google score found in fallback text: {home_score} - {away_score}")
-                return f"{home_score} - {away_score}"
 
-        # Another fallback: Find all divs that might contain scores
-        all_divs = soup.find_all('div')
-        for div in all_divs:
-            div_text = div.get_text().strip()
-            # Look for patterns like "2 - 1", "3:0", "1-0", "2-1 FT", etc.
-            score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)(?:\s*FT|\s*F)?', div_text)
-            if score_match:
-                home_score = score_match.group(1)
-                away_score = score_match.group(2)
-                logger.info(f"   > Google score found (fallback div search): {home_score} - {away_score}")
-                return f"{home_score} - {away_score}"
-        
-        # Final fallback: Check spans as well
-        all_spans = soup.find_all('span')
-        for span in all_spans:
-            span_text = span.get_text().strip()
-            score_match = re.search(r'(\d+)\s*[-:]\s*(\d+)(?:\s*FT|\s*F)?', span_text)
-            if score_match:
-                home_score = score_match.group(1)
-                away_score = score_match.group(2)
-                logger.info(f"   > Google score found (fallback span search): {home_score} - {away_score}")
-                return f"{home_score} - {away_score}"
-                
-        logger.info(f"   > No score found on Google for {match_name} ({match_date_str}) after trying multiple selectors and text searches.")
-        return None
-            
-    except requests.exceptions.RequestException as e:
-        logger.error(f"   > Network error fetching score from Google for {match_name} ({match_date_str}): {e}")
-        return None
-    except Exception as e:
-        logger.error(f"   > Unexpected error parsing Google score for {match_name} ({match_date_str}): {e}")
-        return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"   > Network error fetching score from Google for {match_name} ({match_date_str}) using query '{search_query}': {e}")
+            continue # Try the next query
+        except Exception as e:
+            logger.error(f"   > Unexpected error parsing Google score for {match_name} ({match_date_str}) using query '{search_query}': {e}")
+            continue # Try the next query
+
+    logger.info(f"   > No score found on Google for {match_name} ({match_date_str}) after trying multiple queries and approaches.")
+    return None
 
 def determine_match_result(home_score, away_score):
     """Determine match result based on scores"""
