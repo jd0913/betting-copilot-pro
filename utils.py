@@ -1,10 +1,12 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v83.5 (Hybrid Score Lookup & Settlement Engine)
+# v83.7 (Hybrid Score Lookup & Settlement Engine - Added ESPN NFL/Soccer)
 # FIX: Added settle_bets_with_google_scores function
 # FIX: Properly handles Date_Obj column creation/validation
 # FIX: Updated deadline logic to use current date
-# FIX: Implemented hybrid score lookup (ESPN, BBC, Google) for past matches
+# FIX: Implemented hybrid score lookup (ESPN NFL, ESPN Soccer, Google) for past matches
+# FIX: Added ESPN NFL score lookup function
+# FIX: Added ESPN Soccer score lookup function
 
 import streamlit as st
 import pandas as pd
@@ -95,36 +97,180 @@ def load_data(url):
         logger.exception(f"Unexpected error loading {url}: {str(e)}")
         return "FILE_NOT_FOUND"
 
-def get_score_from_espn_api(match_name, match_date_str):
+def get_score_from_espn_nfl(match_name, match_date_str):
     """
-    Attempt to get score from ESPN's public API.
-    This is an example - you'll need to research the exact endpoints and how to find match IDs.
+    Attempt to get NFL score from ESPN's public API.
+    This function specifically handles NFL matches.
+    Args:
+        match_name (str): e.g., "Miami Dolphins @ New York Jets"
+        match_date_str (str): Date in 'YYYY-MM-DD' format
+    Returns:
+        str: Score in format "X - Y" (Home - Away) or None if not found.
     """
-    # This is a placeholder for the logic to find the match ID and query ESPN.
-    # Example: Search for match ID first, then query summary.
-    # This requires more investigation into ESPN's URL/API structure.
-    # You might need to parse a search result page to find the ID.
-    logger.info(f"Attempting to get score for {match_name} ({match_date_str}) from ESPN (placeholder).")
-    # ... Implement ESPN API call logic here ...
-    # Example pseudo-logic:
-    # search_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard?dates={match_date_str.replace('-', '')}"
-    # Parse search_url response to find the match_id for match_name
-    # Then: summary_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/summary?event={match_id}"
-    # Parse summary_url for the score
-    # Return "X - Y" or None
-    return None # Placeholder
+    # Parse match name for home and away teams
+    # The format is "Away @ Home" or "Away vs Home"
+    if ' @ ' in match_name:
+        away_team, home_team = match_name.split(' @ ', 1)
+    elif ' vs ' in match_name:
+        away_team, home_team = match_name.split(' vs ', 1)
+    else:
+        logger.warning(f"Could not parse match name: {match_name}")
+        return None
 
+    # Format date for ESPN API (YYYYMMDD)
+    api_date = match_date_str.replace('-', '')
+    
+    # ESPN NFL API endpoint for scoreboard
+    # Example: https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=20251207
+    api_url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={api_date}"
+    
+    try:
+        logger.info(f"Fetching NFL scores from ESPN API for date: {match_date_str} (URL: {api_url})")
+        response = requests.get(api_url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        # Iterate through events for the given date
+        for event in data.get('events', []):
+            # Get team names from the event
+            competition = event.get('competitions', [{}])[0]
+            participants = competition.get('competitors', [])
+            
+            # Check if the teams match (case-insensitive)
+            event_home_team = next((p['team']['displayName'] for p in participants if p['homeAway'] == 'home'), None)
+            event_away_team = next((p['team']['displayName'] for p in participants if p['homeAway'] == 'away'), None)
+            
+            if (event_home_team and event_away_team and
+                event_home_team.lower() == home_team.lower() and
+                event_away_team.lower() == away_team.lower()):
+                
+                # Check if the game is completed
+                status = event.get('status', {}).get('type', {}).get('completed', False)
+                if not status:
+                    logger.info(f"Game {match_name} on {match_date_str} found but not completed yet.")
+                    continue # Skip if not completed
+
+                # Get scores
+                home_score = next((int(p['score']) for p in participants if p['homeAway'] == 'home'), None)
+                away_score = next((int(p['score']) for p in participants if p['homeAway'] == 'away'), None)
+
+                if home_score is not None and away_score is not None:
+                    score_str = f"{home_score} - {away_score}"
+                    logger.info(f"Score found via ESPN NFL API for {match_name} ({match_date_str}): {score_str}")
+                    return score_str
+                else:
+                    logger.warning(f"Could not extract scores for {match_name} from ESPN API response.")
+                    return None
+
+        logger.info(f"NFL match {match_name} on {match_date_str} not found in ESPN API response.")
+        return None
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error fetching score from ESPN NFL API for {match_name} ({match_date_str}): {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error parsing ESPN NFL API response for {match_name} ({match_date_str}): {e}")
+        return None
+
+def get_score_from_espn_soccer(match_name, match_date_str):
+    """
+    Attempt to get Soccer score from ESPN's public API.
+    This function specifically handles Soccer matches.
+    Args:
+        match_name (str): e.g., "Arsenal vs Chelsea"
+        match_date_str (str): Date in 'YYYY-MM-DD' format
+    Returns:
+        str: Score in format "X - Y" (Home - Away) or None if not found.
+    """
+    # Parse match name for home and away teams
+    # The format is "Away vs Home"
+    if ' vs ' in match_name:
+        away_team, home_team = match_name.split(' vs ', 1)
+    else:
+        logger.warning(f"Could not parse soccer match name: {match_name}")
+        return None
+
+    # Format date for ESPN API (YYYYMMDD)
+    api_date = match_date_str.replace('-', '')
+    
+    # Determine league (simplified - you might need to map leagues more precisely)
+    # For now, let's try the most common European leagues
+    leagues_to_try = [
+        "eng.1", # Premier League
+        "esp.1", # La Liga
+        "ita.1", # Serie A
+        "ger.1", # Bundesliga
+        "fra.1", # Ligue 1
+        "eng.2", # Championship
+        "esp.2", # La Liga 2
+        "ita.2", # Serie B
+        "ger.2", # 2. Bundesliga
+        "fra.2", # Ligue 2
+    ]
+    
+    for league in leagues_to_try:
+        # ESPN Soccer API endpoint for scoreboard
+        # Example: https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard?dates=20251207
+        api_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={api_date}"
+        
+        try:
+            logger.info(f"Fetching Soccer scores from ESPN API for {league}, date: {match_date_str} (URL: {api_url})")
+            response = requests.get(api_url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            # Iterate through events for the given date
+            for event in data.get('events', []):
+                # Get team names from the event
+                competition = event.get('competitions', [{}])[0]
+                participants = competition.get('competitors', [])
+                
+                # Check if the teams match (case-insensitive)
+                event_home_team = next((p['team']['displayName'] for p in participants if p['homeAway'] == 'home'), None)
+                event_away_team = next((p['team']['displayName'] for p in participants if p['homeAway'] == 'away'), None)
+                
+                if (event_home_team and event_away_team and
+                    event_home_team.lower() == home_team.lower() and
+                    event_away_team.lower() == away_team.lower()):
+                    
+                    # Check if the game is completed
+                    status = event.get('status', {}).get('type', {}).get('completed', False)
+                    if not status:
+                        logger.info(f"Soccer game {match_name} on {match_date_str} found but not completed yet.")
+                        continue # Skip if not completed
+
+                    # Get scores
+                    home_score = next((int(p['score']) for p in participants if p['homeAway'] == 'home'), None)
+                    away_score = next((int(p['score']) for p in participants if p['homeAway'] == 'away'), None)
+
+                    if home_score is not None and away_score is not None:
+                        score_str = f"{home_score} - {away_score}"
+                        logger.info(f"Score found via ESPN Soccer API for {match_name} ({match_date_str}): {score_str}")
+                        return score_str
+                    else:
+                        logger.warning(f"Could not extract scores for {match_name} from ESPN Soccer API response.")
+                        return None
+
+            logger.info(f"Soccer match {match_name} on {match_date_str} not found in ESPN {league} API response.")
+            # Continue to the next league if not found in this one
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error fetching score from ESPN Soccer API for {match_name} ({match_date_str}) in {league}: {e}")
+            continue # Try the next league
+        except Exception as e:
+            logger.error(f"Unexpected error parsing ESPN Soccer API response for {match_name} ({match_date_str}) in {league}: {e}")
+            continue # Try the next league
+
+    logger.info(f"Soccer match {match_name} on {match_date_str} not found in any ESPN Soccer API response.")
+    return None
+
+# Placeholder functions for BBC and Football-Data (as before)
 def get_score_from_bbc(match_name, match_date_str):
     """
     Attempt to scrape score from BBC Sport.
     This is an example - you'll need to find the correct URL structure.
     """
-    # Construct a potential BBC URL based on match name and date
-    # This is tricky as the slug might not be a simple concatenation
-    # Example: https://www.bbc.com/sport/football/2025/championship/results
-    # You'd likely need to scrape a results page for the specific date first.
     logger.info(f"Attempting to get score for {match_name} ({match_date_str}) from BBC Sport (placeholder).")
-    # ... Implement BBC scraping logic here ...
     return None # Placeholder
 
 def get_score_from_football_data(match_name, match_date_str):
@@ -132,11 +278,10 @@ def get_score_from_football_data(match_name, match_date_str):
     Check historical data from football-data.co.uk if the date is old enough.
     This is complex as you'd need to map match_name to teams in the historical data.
     """
-    # Only useful for older matches already present in the historical files you load.
-    # Less useful for recent "past" matches that aren't in the initial historical set.
     logger.info(f"Checking historical data for {match_name} ({match_date_str}) (placeholder).")
     return None # Placeholder
 
+# Keep the Google function as a fallback, but add a delay to be respectful
 def get_google_score(match_name, match_date_str):
     """
     Scrape Google for the final score of a match.
@@ -146,6 +291,9 @@ def get_google_score(match_name, match_date_str):
     Returns:
         str: Score in format "X - Y" or None if not found.
     """
+    # Add a small delay before making the request to be respectful
+    time.sleep(1) # 1 second delay
+    
     # Construct search query including date for accuracy
     # Try multiple query formats to increase chances
     search_queries = [
@@ -264,14 +412,33 @@ def get_google_score(match_name, match_date_str):
 def get_final_score(match_name, match_date_str):
     """
     Try multiple sources in a chain to get the final score.
+    Prioritizes ESPN APIs (NFL and Soccer) first, then falls back to Google.
     """
-    # Define the order of preference for score sources
-    sources = [
-        ("ESPN API", get_score_from_espn_api),
-        ("BBC Sport", get_score_from_bbc),
-        # Add more functions here if needed, e.g., football-data.co.uk check
-        ("Google Search", get_google_score), # Keep Google as a fallback
-    ]
+    # Determine sport based on match name (simple heuristic)
+    # You might need a more robust way to determine sport in the future
+    sport = "Soccer" # Default
+    if any(nfl_team in match_name for nfl_team in ["Dolphins", "Jets", "Bills", "Patriots", "Bengals", "Ravens", "Browns", "Steelers", "Texans", "Colts", "Jaguars", "Titans", "Broncos", "Chiefs", "Raiders", "Chargers", "Cowboys", "Giants", "Eagles", "Redskins", "Falcons", "Panthers", "Saints", "Buccaneers", "Bears", "Lions", "Packers", "Vikings", "49ers", "Seahawks", "Rams", "Cardinals"]):
+        sport = "NFL"
+
+    # Define the order of preference for score sources based on sport
+    if sport == "NFL":
+        sources = [
+            ("ESPN NFL API", get_score_from_espn_nfl),
+            # Add more functions here if needed, e.g., football-data.co.uk check
+            # Google is unlikely to work well for NFL scores now
+        ]
+    elif sport == "Soccer":
+        sources = [
+            ("ESPN Soccer API", get_score_from_espn_soccer),
+            # Add more functions here if needed, e.g., football-data.co.uk check
+            # Google as a last resort for soccer if ESPN fails
+            ("Google Search", get_google_score),
+        ]
+    else: # Default for other sports
+        sources = [
+            # Add other specific APIs here if needed
+            ("Google Search", get_google_score), # Google as fallback for unknown sports
+        ]
 
     for source_name, source_func in sources:
         logger.info(f"Trying {source_name} for {match_name} on {match_date_str}")
