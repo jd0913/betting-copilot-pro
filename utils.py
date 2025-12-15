@@ -1,12 +1,13 @@
 # utils.py
 # Shared functions for data loading, styling, and logic.
-# v83.7 (Hybrid Score Lookup & Settlement Engine - Added ESPN NFL/Soccer)
+# v83.8 (Hybrid Score Lookup & Settlement Engine - Fixed ESPN Routing)
 # FIX: Added settle_bets_with_google_scores function
 # FIX: Properly handles Date_Obj column creation/validation
 # FIX: Updated deadline logic to use current date
 # FIX: Implemented hybrid score lookup (ESPN NFL, ESPN Soccer, Google) for past matches
 # FIX: Added ESPN NFL score lookup function
 # FIX: Added ESPN Soccer score lookup function
+# FIX: Correctly routes Soccer matches to ESPN Soccer API first
 
 import streamlit as st
 import pandas as pd
