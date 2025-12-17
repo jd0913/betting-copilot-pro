@@ -1,9 +1,7 @@
 # utils-2.py
 # Shared functions for data loading, styling, and logic.
-# v85.1 (API-ONLY Score Lookup & Settlement Engine)
-# FIX: Hardcoded The Odds API Key: 0c5a163c2e9a8c4b6a5d33c56747ecf1
-# FIX: REMOVED ALL GOOGLE/ESPN SCRAPING LOGIC.
-# FIX: Settlement now relies exclusively on The Odds API.
+# v85.2 (API-ONLY Score Lookup - Fuzzy Match Fix)
+# FIX: Lowered fuzzy match threshold from 90 to 80 to improve score matching.
 
 import streamlit as st
 import pandas as pd
@@ -14,7 +12,7 @@ import numpy as np
 import logging
 import os
 import time
-from bs4 import BeautifulSoup # Kept for general utility but not scoring
+from bs4 import BeautifulSoup 
 import re
 from fuzzywuzzy import process # For team name matching
 from tqdm import tqdm
@@ -125,8 +123,8 @@ def api_score_lookup(match_date, team_a, team_b, sport):
                 match_a = process.extractOne(team_a, teams)
                 match_b = process.extractOne(team_b, teams)
 
-                # Require a high confidence match (e.g., 90%)
-                if match_a[1] > 90 and match_b[1] > 90:
+                # CRITICAL FIX: Lowered confidence threshold to 80
+                if match_a[1] > 80 and match_b[1] > 80:
                     
                     # Extract final scores
                     scores = game.get('scores', [])
@@ -180,6 +178,11 @@ def settle_bets_with_api_scores(df):
         if match_time > current_time_utc + timedelta(hours=1):
             continue # Skip future matches
             
+        # Ensure match has a valid format (Home vs Away)
+        if ' vs ' not in row['Match']:
+             logger.warning(f"Skipping match '{row['Match']}': Invalid ' vs ' format.")
+             continue
+             
         home_team, away_team = row['Match'].split(' vs ', 1)
         sport = row['Sport']
         
