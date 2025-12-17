@@ -14,7 +14,7 @@ scipy
 nfl_data_py
 nba_api
 fuzzywuzzy
-python-levenshtein
+python-levenshtein # Ensure this is installed for fuzzy matching
 textblob
 pybaseball
 html5lib
