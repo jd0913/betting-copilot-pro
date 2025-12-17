@@ -1,7 +1,9 @@
 # utils-2.py
 # Shared functions for data loading, styling, and logic.
-# v85.2 (API-ONLY Score Lookup - Fuzzy Match Fix)
-# FIX: Lowered fuzzy match threshold from 90 to 80 to improve score matching.
+# v85.3 (API-ONLY Score Lookup - Robust Fix: 7-Day Search Window, Enhanced Error Codes)
+# FIX: Increased API daysFrom to 7.
+# FIX: Added specific error handling for API 401 (Invalid Key) and 429 (Rate Limit).
+# FIX: Added 'football' synonym mapping.
 
 import streamlit as st
 import pandas as pd
@@ -83,10 +85,10 @@ def api_score_lookup(match_date, team_a, team_b, sport):
         logger.warning("ODDS_API_KEY not set. Cannot settle bets without it.")
         return None, "API_KEY_MISSING"
 
-    # Map our sport names to API's sport keys (Customize this map for your API)
-    # The Odds API example keys:
+    # Map our sport names to API's sport keys
     sport_map = {
         'soccer': 'soccer_epl',
+        'football': 'americanfootball_nfl', # Added synonym
         'nfl': 'americanfootball_nfl',
         'nba': 'basketball_nba',
         'mlb': 'baseball_mlb',
@@ -94,7 +96,9 @@ def api_score_lookup(match_date, team_a, team_b, sport):
         'mma': 'mma_mixed_martial_arts',
         'tennis': 'tennis_atp_us_open' 
     }
+    
     api_sport_key = sport_map.get(sport.lower(), None)
+    
     if not api_sport_key:
         logger.warning(f"No API key mapping for sport: {sport}. Skipping lookup.")
         return None, "SPORT_NOT_MAPPED"
@@ -102,15 +106,24 @@ def api_score_lookup(match_date, team_a, team_b, sport):
     endpoint = f"{ODDS_API_BASE_URL}/{api_sport_key}/scores/"
     params = {
         'apiKey': ODDS_API_KEY,
-        'daysFrom': 3, # Check for scores in the last 3 days
+        'daysFrom': 7, # CRITICAL FIX: Check scores in the last 7 days
         'all': 'true' # Include completed matches
     }
     
     session = requests.Session()
     
     try:
-        logger.info(f"Attempting API lookup for {team_a} vs {team_b} ({sport})...")
+        logger.info(f"Attempting API lookup for {team_a} vs {team_b} ({sport}) using key {api_sport_key}...")
         response = session.get(endpoint, params=params, timeout=15)
+        
+        # Check specific error codes for immediate feedback
+        if response.status_code == 401:
+            logger.error("API HTTP Error 401: Unauthorized. CHECK API KEY.")
+            return None, "API_ERROR_401_INVALID_KEY"
+        if response.status_code == 429:
+            logger.error("API HTTP Error 429: Rate Limit Exceeded. Check usage limits.")
+            return None, "API_ERROR_429_RATE_LIMIT"
+            
         response.raise_for_status()
         data = response.json()
         
@@ -123,27 +136,32 @@ def api_score_lookup(match_date, team_a, team_b, sport):
                 match_a = process.extractOne(team_a, teams)
                 match_b = process.extractOne(team_b, teams)
 
-                # CRITICAL FIX: Lowered confidence threshold to 80
-                if match_a[1] > 80 and match_b[1] > 80:
+                # Require an 80% confidence match (lowered in v85.2)
+                if match_a[1] >= 80 and match_b[1] >= 80:
                     
                     # Extract final scores
                     scores = game.get('scores', [])
                     
                     # Look up scores by team name
-                    home_score = next((int(s['score']) for s in scores if s['name'] == game['home_team']), 0)
-                    away_score = next((int(s['score']) for s in scores if s['name'] == game['away_team']), 0)
+                    home_score = next((int(s['score']) for s in scores if s['name'] == game['home_team']), -1)
+                    away_score = next((int(s['score']) for s in scores if s['name'] == game['away_team']), -1)
                     
+                    if home_score == -1 or away_score == -1:
+                        logger.error(f"Score parsing failed: Could not find home/away score in API response for {game['home_team']} vs {game['away_team']}")
+                        continue
+                        
                     score_str = f"{home_score}-{away_score}"
                     
-                    logger.info(f"API SUCCESS: Score found for {game['home_team']} vs {game['away_team']}: {score_str}")
+                    logger.info(f"API SUCCESS: Score found (Fuzzy Match: {match_a[1]} & {match_b[1]}) for {game['home_team']} vs {game['away_team']}: {score_str}")
                     return score_str, "API_SUCCESS"
                     
-        logger.info("API lookup found no completed match.")
+        logger.info("API lookup found no completed match matching team names.")
         return None, "Pending"
 
     except requests.exceptions.HTTPError as e:
-        logger.error(f"API HTTP Error ({e.response.status_code}). Check API Key/usage limits.")
-        return None, f"API_ERROR_{e.response.status_code}"
+        status_code = e.response.status_code
+        logger.error(f"API HTTP Error ({status_code}). Check API Key/usage limits. Response: {e.response.text[:100]}")
+        return None, f"API_ERROR_{status_code}"
     except requests.exceptions.RequestException as e:
         logger.error(f"API Request Failed (Network/Timeout): {e}")
         return None, "API_NETWORK_ERROR"
