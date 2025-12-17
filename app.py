@@ -1,6 +1,6 @@
-# app.py
-# Betting Co-Pilot Pro - v73.0 (Google-only approach)
-# FIX: Removed Streamlit Secrets dependency, uses Google for all data
+# app-2.py
+# Betting Co-Pilot Pro - v85.1 (API-Only Edition - Hardcoded Key)
+# FIX: Updated status message to reflect API-Only score lookup.
 
 import streamlit as st
 import utils
@@ -41,35 +41,29 @@ with st.sidebar:
         "Current Bankroll ($)", 
         value=float(st.session_state.bankroll),
         min_value=0.0,
-        step=10.0,
+        step=100.0,
         format="%.2f"
     )
     
-    if st.session_state.bankroll < 100:
-        st.warning("⚠️ Low bankroll", icon="🚨")
-    elif st.session_state.bankroll > 10000:
-        st.success("🏦 High roller", icon="💎")
-    
     # Navigation
-    st.markdown("---")
-    st.subheader("🧭 Navigation")
-    
-    pages = ["Command Center", "Market Map", "Bet Tracker", "History", "About"]
+    st.header("🗺️ Navigation")
+    pages = ["Command Center", "Bet Tracker", "History", "Market Map", "About"]
     for page in pages:
         if st.button(
-            f"{'✅' if st.session_state.current_page == page else '➡️'} {page}",
+            page, 
             use_container_width=True,
             type="primary" if st.session_state.current_page == page else "secondary"
         ):
             st.session_state.current_page = page
             st.rerun()
     
-    # System Status (since we removed secrets, just show basic status)
+    # System Status
     st.markdown("---")
     st.subheader("🔧 System Status")
     
     st.success("✅ Data Sources: Connected")
-    st.success("✅ Auto-Settlement: Active (Google Score Lookup)")
+    # CRITICAL CHANGE: Updated status message
+    st.success("✅ Auto-Settlement: Active (API-Only Score Lookup)")
     st.success("✅ Score Tracking: Enabled")
 
 # ==============================================================================
